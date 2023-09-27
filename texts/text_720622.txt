@@ -1,0 +1,97 @@
+
+
+Apache NlpCraft 1.0.0. Упрощение использования и расширение возможностей / Habr
+
+
+               Apache NlpCraft 1.0.0. Упрощение использования и расширение возможностей  Reading time  
+    7 min
+   Views  728 Open source *Scala *API *Apache *Natural Language Processing * 
+    Review
+        Apache NlpCraft - библиотека с открытым исходным кодом, предназначенная для интеграции языкового интерфейса с пользовательскими приложениями. Новая версия 1.0.0 привнесла в проект наиболее существенные изменения за все время его существования. Основные идеи развития библиотеки были изложены в данной заметке, вкратце напомню их суть:Предельное упрощение, отказ от всех вспомогательных enterprise возможностей, предельно точная фокусировка продукта.Максимальная  плагабильность, позволяющая контролировать все элементы обработки текста и как следствие, решающая проблему поддержки мультиязычности. Текущее API и имплементация - Scala 3. Базовые концепцииAPI представлено двумя основными элементами:Модель данных — предметно-ориентированный объект, отвечающий за интерпретацию пользовательского ввода.Клиент — объект, позволяющий обращаться моделью.Пример использования:val mdl = new CustomNlpModel()
+val client = new NCModelClient(mdl)
+val result = client.ask("Some user command", "userId")
+client.clearDialog("userId")Модель данныхОпределимся с терминологией и шаг за шагом опишем составные части модели.ТерминОписаниеТокенNCToken. Строка пользовательского ввода согласно некоторым правилам разбивается на части, то есть токены. Чаще всего разбиение осуществляется просто по пробелам между словами и некоторым дополнительным условиям. Таким образом, пользовательский запрос "Где я?" будет разложен на три токена: "Где", "я", и "?". Помимо собственно текста токены могут содержать некоторую дополнительную информацию, например, часть речи и т. д. Токены необходимы для поиска сущностей.Сущность NCEntity. Согласно википедии, именованная сущность — это объект реального мира, такой как человек, местоположение, организация, продукт и т. д., который можно обозначить именем собственным. Каждая сущность может состоять из одного или нескольких токенов. Сущности могут являться простыми маркерами или содержать данные. Сущности используются для извлечения из них информации и поиска интентов на их основе. ВариантNCVariant. Согласованный список сущностей. Сущности могут перекрываться, содержать одни и те же токены, поэтому пользовательский ввод должен обрабатываться как набор вариантов. Например, токен «Мерседес» может быть воспринят как Марка машины или Испанское женское имя. Так образом мы имеем два варианта, по одной сущности в каждом. Если сущности не перекрываются, то на выходе системы есть только один вариант.ИнтентИнтент — это сочетание колбека и правила, по которому колбек должен сработать. Правило — это чаще всего шаблон, основанный на наборе ожидаемых сущностей в тексте запроса. Для задания интентов в Apache NlpCraft используется специальный  декларативный язык Intent Definition Language.Картинка, иллюстрирующая вышесказанное.Ответственность модели:Модель должна уметь разбивать пользовательский текст на токены.По входным токенам уметь найти требуемые сущности.Содержать интенты, опирающиеся на сущности, и колбеки с бизнес логикой.За первые два пункта отвечают компоненты модели, организованные в NCPipeline.Компоненты моделиКомпонентОписаниеNCTokenParserПарсер токенов. Принимает на входе текст. NLPCraft предоставляет реализацию парсера для английского языка, а также примеры реализаций для французского и русского языков. Обязательный компонент системы.NCTokenEnricherКомпонент, позволяющий добавлять токенам дополнительные свойства, такие как часть речи, признаки стоп-слов, кавычек и тд. NLPCraft предоставляет набор готовых реализаций для английского языка и примеры для русского и французского. Система может содержать необязательный список компонентов NCTokenEnricher.NCTokenValidatorКомпонент, предназначенный для проверки валидности созданных токенов, может прерывать обработку пользовательского ввода. Система может содержать необязательный список компонентов NCTokenValidator.NCEntityParserКомпонент, предназначенный для поиска именованных сущностей. Принимает на входе токены. NLPCraft предоставляет готовые обертки NER компонентов от Apache OpenNLP и Stanfdord NLP, а также собственное решение, семантический парсер. Система должна содержать как минимум один компонент NCEntityParser.NCEntityEnricherКомпонент, позволяющий добавлять сущностям дополнительные свойства. Система может содержать необязательный список компонентов NCEntityEnricher.NCEntityMapperКомпонент, позволяющий объединять сущности, обнаруженные другими парсерами, то есть создавать сложные парсеры на основе существующих. Система может содержать необязательный список компонентов NCEntityMapper.NCEntityValidatorКомпонент, предназначенный для проверки валидности созданных сущностей, может прерывать обработку пользовательского ввода. Система может содержать необязательный список компонентов NCEntityValidator.NCVariantFilterКомпонент, позволяющий отфильтровать найденные варианты. Опциональный элемент.Создание интентов модели подробно описано в документации и будет продемонстрировано в приведенном ниже примере.ПримерСоздадим простой пример, модель управления умным домом с поддержкой русского языка, для которого подберем или сами запрограммируем все необходимые компоненты NCPipeline.Имплементация NCTokenParserПредставленная ниже реализация парсера для русского языка основана на open source решении от Language Tool. class NCRuTokenParser extends NCTokenParser:
+   private val tokenizer = new WordTokenizer
+   override def tokenize(text: String): List[NCToken] =
+       val toks = collection.mutable.ArrayBuffer.empty[NCToken]
+       var sumLen = 0
+       for ((word, idx) <- tokenizer.tokenize(text).asScala.zipWithIndex)
+           val start = sumLen
+           val end = sumLen + word.length
+           if word.strip.nonEmpty then
+               toks += new NCPropertyMapAdapter with NCToken:
+                   override def getText: String = word
+                   override def getIndex: Int = idx
+                   override def getStartCharIndex: Int = start
+                   override def getEndCharIndex: Int = end
+           sumLen = end
+       toks.toListКомпонент формирует список токенов. Как можно заметить, это всего лишь обертка над готовым open source решением длиной в несколько строк. Имплементации NCTokenEnricherДля дальнейшей работы нам понадобятся имплементации NCTokenEnricher, для определения лемм, частей речи и стоп слов.class NCRuLemmaPosTokenEnricher extends NCTokenEnricher:
+   private def nvl(v: String, dflt : => String): String = if v != null then v else dflt
+   override def enrich(req: NCRequest, cfg: NCModelConfig, toks: List[NCToken]): Unit =
+       val tags = RussianTagger.INSTANCE.tag(toks.map(_.getText).asJava).asScala
+       require(toks.size == tags.size)
+       toks.zip(tags).foreach { case (tok, tag) =>
+           val readings = tag.getReadings.asScala
+           val (lemma, pos) = readings.size match
+               // No data. Lemma is word as is, POS is undefined.
+               case 0 => (tok.getText, "")
+               // Takes first. Other variants ignored.
+               case _ =>
+                   val aTok: AnalyzedToken = readings.head
+                   (nvl(aTok.getLemma, tok.getText), nvl(aTok.getPOSTag, ""))
+           tok.put("pos", pos)
+           tok.put("lemma", lemma)
+       }Компонент добавляет в токен данные о лемме и части речи.class NCRuStopWordsTokenEnricher extends NCTokenEnricher:
+   private val stops = RussianAnalyzer.getDefaultStopSet
+   private def getPos(t: NCToken): String = 
+       t.get("pos").getOrElse(throw new NCException("POS not found in token."))
+   private def getLemma(t: NCToken): String = 
+       t.get("lemma").getOrElse(throw new NCException("Lemma not found in token."))
+   override def enrich(req: NCRequest, cfg: NCModelConfig, toks: List[NCToken]): Unit =
+       for (t <- toks)
+           val lemma = getLemma(t)
+           lazy val pos = getPos(t)
+           t.put(
+               "stopword",
+               lemma.length == 1 && 
+               !Character.isLetter(lemma.head) && 
+               !Character.isDigit(lemma.head) ||
+               stops.contains(lemma.toLowerCase) ||
+               pos.startsWith("PARTICLE") ||
+               pos.startsWith("INTERJECTION") ||
+               pos.startsWith("PREP")
+           )Компонент добавляет в токен признак стоп слова. Для его создания мы снова воспользовались open source решениями от Language Tool и Apache Lucene. Имплементация NCEntityParser На последнем подготовительном шаге создадим простую реализацию NCEntityParser для русского языка, адаптировав имеющийся семантический парсер от Apache NlpCraft. Именно для его более точной точной работы нам и потребовалось в предыдущем разделе создать компоненты, обогащающие токены леммами и признаками стоп слов.class NCRuSemanticEntityParser(src: String) extends NCSemanticEntityParser(
+    new NCStemmer:
+        private val stemmer = new SnowballStemmer(SnowballStemmer.ALGORITHM.RUSSIAN)
+  
+        override def stem(txt: String): String = 
+            stemmer.synchronized { stemmer.stem(txt.toLowerCase).toString }
+    ,
+    new NCRuTokenParser(),
+    src
+)Здесь мы использовали стеммер для русского языка от Apache OpenNLP.Процесс конфигурации созданного семантического парсера приведен в описании его базового компонента, по ссылке lightswitch_model_ru.yaml можно найти полный пример данной конфигурации.Обратите внимание на то, что все разработанные нами выше компоненты могут быть использованы для всех проектов, связанных с обработкой русского языка и нам не придется создавать их всякий раз заново. Это была единовременная задача.Создание моделиНа последнем шаге создадим саму модель.class LightSwitchRuModel extends NCModel(
+    NCModelConfig("nlpcraft.lightswitch.ru.ex", "LightSwitch Example Model RU", "1.0"),
+    new NCPipelineBuilder().
+        withTokenParser(new NCRuTokenParser()).
+        withTokenEnricher(new NCRuLemmaPosTokenEnricher()).
+        withTokenEnricher(new NCRuStopWordsTokenEnricher()).
+        withEntityParser(new NCRuSemanticEntityParser("lightswitch_model_ru.yaml")).
+        build
+):
+    @NCIntent("intent=ls term(act)={has(ent_groups, 'act')} term(loc)={# == 'ls:loc'}*")
+    def onMatch(
+        ctx: NCContext,
+        im: NCIntentMatch,
+        @NCIntentTerm("act") actEnt: NCEntity,
+        @NCIntentTerm("loc") locEnts: List[NCEntity]
+    ): NCResult =
+        val action = if actEnt.getType == "ls:on" then "включить" else "выключить"
+        val locations = 
+            if locEnts.isEmpty then "весь дом" else locEnts.map(_.mkText).mkString(", ")
+        // Add HomeKit, Arduino or other integration here.
+        // By default - just return a descriptive action string.
+        NCResult(new Gson().toJson(Map("locations" -> locations, "action" -> action).asJava))NCPipeline модели построена на основе созданных нами компонентов. Модель имеет один интент “ls”, колбек которого содержит интеграционную логику управления умным домом. Колбек будет вызван, если разобранный пользовательский запрос содержит одну сущность группы ”act” и одну сущность с идентификатором “ls:loc”. В сработавшем колбеке из входных сущностей извлекаются необходимые данные и вызывается программный код бизнес логики. Подробнее в документации.Обратите внимание, вы можете использовать любой другой подход для обнаружения необходимых вам сущностей, включая нейросети или иные обученные системы и модели, а не только приведенное в качестве примера решение на основе расширения семантического парсера. Также стоит отметить, что в примере мы задействовали не все существующие компоненты NCPipeline, а лишь необходимые для создания требуемой простейшей модели. Использование моделиval mdl = new LightSwitchRuModel
+val client = new NCModelClient(mdl)
+client.ask("Выключи свет по всем доме", "user")Этот и прочие примеры доступны на сайте.ЗаключениеНадеюсь данная заметка поможет вам понять основные принципы работы с библиотекой Apache NlpCraft версии 1.0.0 и успешно стартовать с ее помощью ваши собственные проекты.      Tags: apacheopen sourcenatural language processingnlpnlpcraftapiscala  Hubs: Open sourceScalaAPIApacheNatural Language Processing          
+
+

@@ -1,0 +1,74 @@
+
+
+Русские программисты не сдаются-1 / Habr
+
+
+              17  April  2021 at 12:58  Русские программисты не сдаются-1 Development of mobile applications *Artificial Intelligence IOT  
+        Recovery mode
+           Часть 1-я 
+
+
+
+Незаметно пролетело два года с тех событий, которые заставили меня написать статью «Челобитная в Apple» – о творящемся беспределе в отрасли, создающей классные программы и интересные гаджеты для повседневной жизни.
+
+
+Если кратко о предыдущей статье – в ней был описан рутинный случай лишения девелоперской лицензии разработчика ПО работающего на мобильной платформе iOS Вадима Башурова, члена команды проекта DO-RA. Попутно о лишении лицензии с блокировкой рабочего аккаунта Apple руководителя и инвестора проекта ДО-РА, с последующим, чудодейственным восстановлением прав со стороны Apple.
+
+
+Минул год с момента восстановления девелоперской лицензии руководителя проекта ДО-РА. Однако, при обновлении нашего пользовательского ПО – DORA.Pro в App Store в апреле 2020 г. случился нежданчик – предупреждение от Apple, что дескать я занимаюсь противозаконной деятельностью, мошенничеством и плагиатом, и что моя лицензия, как и аккаунт Apple могут быть заблокированы в ближайшее время, если я не подам апелляцию в течении 14 дней в Apple, отсчитывая от момента данного сообщения. 
+
+
+Обвинения против меня были стандартны, без излишних фантазий, ибо за это давно отвечает искусственный интеллект компании Apple, а не живые люди. Текст присланный мне привожу полностью без изъятий, так как он не секретен и будет понятнее логика статьи:
+
+Other — Other
+
+Hello, Upon further review of the activity associated with your Apple Developer Program membership, we have determined that your membership, or a membership associated with your account, has been used for dishonest or fraudulent activity. Therefore, your Apple Developer Program account has been flagged for removal.
+
+
+We found that your app is in direct violation of the Apple Developer Program License Agreement, which states:
+
+
+«You will not, directly or indirectly, commit any act intended to interfere with the Apple Software or Services, the intent of this Agreement, or Apple’s business practices including, but not limited to, taking actions that may hinder the performance or intended use of the App Store, Custom App Distribution, or the Program (e.g., submitting fraudulent reviews of Your own Application or any third party application, choosing a name for Your Application that is substantially similar to the name of a third party application in order to create consumer confusion, or squatting on application names to prevent legitimate third party use).”
+
+
+During our review, we found a pattern of manipulative or misleading behavior that violates the Apple Developer Program License Agreement. These behaviors can include, but are not limited to, inaccurate metadata describing your app or service, misleading app content, engaging in inauthentic ratings and reviews manipulation, providing misleading customer support responses, providing misleading responses in Resolution Center, engaging in misleading purchasing or bait-and-switch schemes, and other dishonest or fraudulent activity within or outside of the app.
+
+
+If you would like to appeal this termination to the App Review Board, you must do so within 14 calendar days. When submitting your appeal, be sure to select „I would like to appeal an app rejection or app removal“ from the drop-down menu on the Contact the App Review Team page. Otherwise, your Apple Developer Program membership will be terminated and all apps associated with your account will be removed from the App Store.
+
+
+Best regards,
+
+App Store Review
+
+На основании выше изложенного, грозного предупреждения, мной оперативно была написана апелляция в Apple ёмкостью в 4000 знаков на приличном английском, большего не позволяла форма, где я попытался уточнить у Apple, в чём конкретно состоит моя провинность?! Очень хотелось узнать: факты, действия, события, приведшие к подобному плачевному результату?! Заодно я проконсультировался с американскими коллегами, чем мне грозит подобное обвинение в «мошенничестве» по американским законам? Их ответ меня не окрылил, ибо за мошенничество в США можно легко присесть на несколько лет, повышая свою квалификацию не в области программирования и схемотехники, а в лучшем случае в настольном теннисе и шашках. Шахматы – игра не для американских тюрем, хотя «Побег из Шоушенко» к/ф явное исключение.
+
+
+Ровно через 14 дней на электронную почту пришёл отрицательный ответ на мою апелляцию, суть которого – профилактический бан на 1 год без права повторной апелляции (как в СССР – без права переписки;). Ответов – в чем причины подобного бана на столь продолжительный срок в письме не было. И тем не менее мы со своей командой всё-таки пытались «информационно атаковать» различные службы Apple с целью дать возможность самим объективно разобраться в нарушениях, которые мы точно не совершали. 
+
+
+В связи с отказом в размещении наших пользовательских приложений в App Store, нам пришлось завернуть свои экспортные операции по поставке устройств DO-RA.Q в Amazon, eBay, Alibaba, а также в другие Интернет магазины за рубежом. Дело в том, что у нашей продукции в инструкциях и на коробах было заявлено: кроссплатформенное устройство работает, в частности, на мобильных платформах: iOS и Android. Кстати, до этих событий наши гаджеты уже продавались более чем 20 российских интернет магазинах и супермаркетах от OZON до АШАН. Но в России проще заменить информацию, которая вводит в заблуждение покупателя. За бугром это целая канитель связанная с рисками затрат, рекламациями и штрафами.
+
+
+Однако после написания 5-го или 10-го письма, в итоге нас службы Apple пустили, что называется по кругу, присваивая длинные номера на наши запросы и не отвечая ни через одну, ни через две недели, даже когда мы пытались уточнить всего на всего статус запроса. В подобных «душевных диалогах» пролетело месяца 3-4, далее мы попытались звонить в службу поддержки Apple, но результат оказался тот же – сначала добродушная поддержка, затем пауза и холодное указание – ждите ответа по почте.
+
+
+Мы попытались оформить корпоративную лицензию разработчика ПО от Apple на собственную компанию АО «Интерсофт Евразия», что в период санкций со стороны США оказалось также не простым делом. Пришлось даже звонить в специальный департамент США для присвоения нашей компании специального идентификационного кода в Штатах, иначе никак. Хорошо, что мы отыскали этот идентификационный код, благо присвоенный ещё в эпоху, когда Интерсофт Евразия работала с Apple в рамках программы MFi (2012-2015гг.). Тогда у нашей команды были «несбыточные» надежды, что чип DO-RA.micro интегрируют в смартфоны и планшеты если не Apple, то в рамках подобного проекта ARA Project/Google.
+
+
+Заплатив с сентябре 2020 г. свои $99 мы довольно быстро получили корпоративную лицензию, под которой могло работать определённое количество программистов нашей команды и право выкладывать собственные разработки ПО в App Store и TestFlight. При этом мы опять нарвались на небольшие, но преодолимые трудности. Пришлось переименовать пользовательское приложение DORA.Pro в DORA.Plus так как по регламенту Apple одинаковые названия у разных разработчиков не допускаются, а префиксы в данном деле пока ещё работают. 
+
+
+Убрав последние баги из своих прог: DORA.Plus, DORA.Light, мы начали с нетерпением ожидать прохождения этапов проверки в App Store. Поначалу всё шло гладко, на каждую инстанцию по 1 дню. Ранее же наши приложения DO-RA проходили всю проверку в течение 24-48 часов. 
+
+И вдруг гром грянул средь ясного неба… В рамках корпоративной лицензии Интерсофт Евразия служба американской компании Apple сообщила тоже самое, что написано по-английски в начале статьи: Other – Other… Hello, Upon further review of the activity associated with your Apple Developer Program membership, we have determined that your membership, or a membership associated with your account, has been used for dishonest or fraudulent activity. Therefore, your Apple Developer Program account has been flagged for removal.
+
+
+Попытка апеллировать в Apple при подобных обвинениях опять не увенчалась успехом. Честно говоря, мы как-то загрустили от безысходности нашего положения. Ведь часть рынка гаджетов, причём не самая низкодоходная была потеряна с лишением прав разработчика на платформе iOS. Но мы решили всё–равно не сдаваться… 
+
+
+Продолжение следует.
+
+17.04.2021г.    Tags: AppleDO-RAДО-РАриск лицензий от Appleчелобитная в Apple Hubs: Development of mobile applicationsArtificial IntelligenceIOT          
+
+

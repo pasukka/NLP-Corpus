@@ -1,0 +1,19 @@
+
+
+Видеозапись вебинара «Julia — A fresh approach to numerical computing and data science» / Habr
+
+
+              29  April  2017 at 11:38  Видеозапись вебинара «Julia — A fresh approach to numerical computing and data science» FlyElephant corporate blog Data Mining *Big Data *Julia *Machine learning *      
+
+
+Команда FlyElephant в марте проводила вебинар с со-основателем и CEO в Julia Computing, а также со-автором языка Julia — Viral B. Shah, на тему "Julia — A fresh approach to numerical computing and data science".
+
+
+
+
+
+
+Также, хочу напомнить, что через 2 недели, 13 мая в Одессе, наша команда будет проводить конференцию Data Science Lab, на которую я всех приглашаю. Полная программа конференции, все детали и регистрация по адресу: www.datascience.in.ua.
+Для читателей нашего блога действует 10% скидочный промо-код: FlyElephant10.    Tags: flyelephantвебинарJuliaData ScienceData MiningMachine Learningdeep learningbigdataHPCMPIGPUxeon phi Hubs: FlyElephant corporate blogData MiningBig DataJuliaMachine learning          
+
+

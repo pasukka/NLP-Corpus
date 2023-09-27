@@ -1,0 +1,243 @@
+
+
+Генератор абсурда за пять минут с NLTK и TreeTagger / Habr
+
+
+              23  July  2021 at 17:00  Генератор абсурда за пять минут с NLTK и TreeTagger Joom corporate blog Python *Programming *Natural Language Processing *      
+
+
+Этот текст, при его очевидной абсурдности и лишённости смысла, мог показаться вам смутно знакомым. Это начало поэмы «Москва – Петушки», в котором слова, принадлежащие одной части речи, перемешаны между собой в случайном порядке.
+
+
+Насколько сложно в наш век всеобщего проникновения машинного обучения и NLP набросать такую игрушку? О, это очень легко.
+
+
+Начнём с лёгкой (хехе) части — архитектурной. Для простоты напишем наш рандомизатор в виде консольной утилиты, принимающей оригинальный текст в stdin и печатающей результат в stdout. Вся логика нашей программы легко бьётся на четыре основных этапа:
+
+
+токенизация — нужно разбить входной текст на слова и знаки препинания, иными словами — токены;
+тегирование — нужно для каждого токена сообразить, к какой части речи он относится;
+перемешивание — нужно перемешать между собой токены каждого типа;
+детокенизация — нужно собрать красивый текст из итоговых токенов.
+
+
+Давайте сразу подготовим из этого каркас программы.
+
+from dataclasses import dataclass
+import sys
+from typing import List
+Tag = str
+@dataclass
+class TaggedToken:
+    text: str
+    tag: Tag
+def tokenize_text(text: str) -> List[str]:
+    ...
+def tag_tokens(tokens: List[str]) -> List[TaggedToken]:
+    ...
+def shuffle_tokens(tokens: List[TaggedToken]) -> List[TaggedToken]:
+    ...
+def detokenize_tokens(tokens: List[TaggedToken]) -> str:
+    ...
+if __name__ == "__main__":
+    input_text = "".join(sys.stdin)
+    tokens = tokenize_text(input_text)
+    tagged_tokens = tag_tokens(tokens)
+    sys.stderr.write(f"Tagged tokens:\n{tagged_tokens!r}")
+    shuffled_tokens = shuffle_tokens(tagged_tokens)
+    result_text = detokenize_tokens(shuffled_tokens)
+    print(result_text)
+
+
+Хорошая структура – залог успеха.
+
+ 
+
+Берём NLTK
+
+Лёгким росчерком клавиатуры ставим в наш virtualenv NLTK — одну из самых популярных библиотек на Python для работы с естественными языками. 
+
+python3 -m pip install nltk
+
+
+Токенизация текста — одна из самых простых задач NLP, так что заморачиваться нам здесь сильно не придётся:
+
+import nltk
+def tokenize_text(text: str) -> List[str]:
+    return nltk.word_tokenize(text)
+
+
+Давайте добавим тест и проверим, что вышло:
+
+# tests/tokenizer_test.py
+from mixer import tokenize_text
+def test_tokenizer():
+    assert tokenize_text("hello world") == ["hello", "world"]
+
+
+Можно запустить прямо в интерфейсе PyCharm (переключите тестовый фреймворк на pytest) и увидеть, что всё работает как ожидается.
+
+
+Тегировать токены в NLTK тоже крайне просто:
+
+def tag_tokens(tokens: List[str]) -> List[TaggedToken]:
+    return [
+        TaggedToken(text=token, tag=tag)
+        for token, tag in nltk.pos_tag(tokens)  # тут вся магия
+    ]
+
+
+ 
+Пишем алгоритм
+
+Алгоритмическая часть самая интересная, верно? Нам надо перемешать друг с другом токены с одинаковым тегом. Давайте построим отдельный список токенов по каждому тегу, перемешаем его, а потом соберём все токены обратно в одну последовательность за счёт запоминания, в какой позиции какой тег должен стоять.
+
+
+Спойлер: некоторые слова лучше не перемешивать. Давайте заведём для них виртуальный тег и перемешивать принадлежащие ему токены не будем.
+
+DONT_MIX_WORDS = {
+    "a", "an", "the",
+    "am", "is", "are", "been", "was", "were",
+    "have", "had",
+}
+DONT_MIX_MARKER = "DONT_MIX"
+def shuffle_tokens(tokens: List[TaggedToken]) -> List[TaggedToken]:
+    tokens = [
+        token if token.text not in DONT_MIX_WORDS else TaggedToken(text=token.text, tag=DONT_MIX_MARKER)
+        for token in tokens
+    ]
+    tokens_by_tag: MutableMapping[Tag, List[TaggedToken]] = defaultdict(list)
+    index_to_tag: MutableMapping[int, Tag] = {}
+    index_to_subindex: MutableMapping[int, int] = {}
+    for idx, token in enumerate(tokens):
+        index_to_tag[idx] = token.tag
+        index_to_subindex[idx] = len(tokens_by_tag[token.tag])
+        tokens_by_tag[token.tag].append(token)
+    for tag, curr_tokens in tokens_by_tag.items():
+        if tag != DONT_MIX_MARKER:
+            random.shuffle(curr_tokens)
+    return [
+        tokens_by_tag[index_to_tag[idx]][index_to_subindex[idx]]
+        for idx in range(len(tokens))
+    ]
+
+
+Тест тут сочинить уже сложнее, но я на скорую руку придумал вот такой:
+
+def test_shuffle():
+    tokens = [TaggedToken(str(i), "TAG_1") for i in range(100)] + \
+             [TaggedToken(str(i), "TAG_2") for i in range(100)]
+    shuffled_tokens = shuffle_tokens(tokens)
+    assert tokens != shuffled_tokens
+    assert sorted(tokens[:100], key=repr) + sorted(tokens[100:], key=repr) == \
+           sorted(shuffled_tokens[:100], key=repr) + sorted(shuffled_tokens[100:], key=repr)
+
+
+С вероятностью порядка 2E-158 он упадёт. Потомки ругнутся на нас и наши чёртовы флапающие тесты, колонизируя туманность Андромеды.
+
+
+Здесь, конечно, ещё надо потестировать обработку наших особенных слов и всякое корнеркейсы, но тестов мне и на работе достаточно пишется, пойдём дальше к делу.
+
+ 
+
+Детокенизируем
+
+Здесь мы возвращаемся к NLTK — собирать текст из токенов он тоже умеет!
+
+from nltk.tokenize.treebank import TreebankWordDetokenizer
+def detokenize_tokens(tokens: List[TaggedToken]) -> str:
+    return TreebankWordDetokenizer().detokenize([token.text for token in tokens])
+
+
+Наконец программу можно запустить! Я добавил в test_en.txt первый абзац статьи Википедии про одну восточноевропейскую сверхдержаву.
+
+$ python3 mixer.py < test_en.txt
+Europe, and the sixteen Europe, is a time spanning Earth Saint or Asia Europe . It is the largest language in the country, encompassing in million 146.2 inhabited kilometres, and covering more in million while Federation's Russian country world . Petersburg has of cultural nation nations, and has the most zones across any world with the land, in spoken native borders . they extends a capital than 17 one-eighth; and is the most sovereign nation of Northern, and the ninth-most Russian world in the language . Slavic, the country, is the largest city in Russia, over Moscow Russia is the country's populous country and populous centre . Russians are the largest Europe and European population; It speak square, the most eleven Eastern area, and the most second-largest spoken city of Slavic.
+
+
+Уже хорошо. Есть, конечно, косяки – пробел перед точкой, да и надо немного поправить регистр. Пробел перед точкой я вырежу str.replaceом, а для учёта регистра сделаю простой фокус — скажу, что все слова, начинающиеся с большой буквы не после точки (в исходном тексте) — имена собственные, а с маленькой — нарицательные. Дальше поправлю регистр в соответствии с этим правилом. 
+
+def detokenize_tokens(tokens: List[TaggedToken], private_nouns: Set[str]) -> str:
+    cased_tokens = []
+    for prev_token, token in zip([TaggedToken(".", ".")] + tokens, tokens):
+        if prev_token.text == ".":
+            cased_tokens.append(token.text[0].upper() + token.text[1:])
+        elif token.text.lower() in private_nouns:
+            cased_tokens.append(token.text[0].lower() + token.text[1:])
+        else:
+            cased_tokens.append(token.text)
+    result = TreebankWordDetokenizer().detokenize(cased_tokens)
+    result = result.replace(" .", ".")
+    return result
+
+Есть другие теггеры
+
+Давайте двинем к самому весёлому — русскому языку. В NLTK есть токейнайзер для русского языка, но качество его работы оставляет желать лучшего. Давайте прогоним его на уже известной нам поэме (перед этим нужно скачать ресурс для NLTK:  python -c "import nltk; nltk.download('averaged_perceptron_tagger_ru')").
+
+$ python3 mixer.py < test_ru.txt
+Всех говорят. Вечер: разу, про ничего я видел с него, а сам ведь начала не видел, Сколько Кремль уже, качестве люди,) выпил как на –. Был с юг из конец Ото конца (с – вокруг опыту. В Савеловском для мест. Очень что как крутился тысячу и Вот севера ни слышал Москве, ни чтоб насквозь еще не проходил, декокта или только целый раз придумали по тех стакан, и не потому а вчера пьян напившись: я, и не знаю в зубровки, попало на запада восток раз, так и на Кремля увидел, что по разу утреннего Кремль похмелюги Все лучшего опять не вышел,
+
+
+Видно, что плохо. Если копнуть, вылезает много недоброго. NLTK знает довольно мало о русском языке; например, практически ничего про падежи и склонения.
+
+
+Но в статьях по тегированию русского языка сравниваются не с NLTK. Там сравниваются с TreeTagger – давайте и мы его подтянем.
+
+
+Поскольку это не pure Python пакет, процесс резко усложняется. Ниже пишу, как скачать на MacOS:
+
+# Скачиваем саму утилиту и вспомогательные скрипты
+wget https://www.cis.uni-muenchen.de/~schmid/tools/TreeTagger/data/tree-tagger-MacOSX-3.2.3.tar.gz https://www.cis.uni-muenchen.de/~schmid/tools/TreeTagger/data/tagger-scripts.tar.gz
+mkdir -p treetagger && tar -xzf tree-tagger-MacOSX-3.2.3.tar.gz --directory treetagger && tar -xzf tagger-scripts.tar.gz --directory treetagger
+# Скачиваем поддержку русского языка
+wget https://www.cis.uni-muenchen.de/~schmid/tools/TreeTagger/data/russian.par.gz
+gunzip -c russian.par.gz > treetagger/lib/russian.par
+
+
+Интерфейс нам предоставлен только консольный. Что поделать, будем запускать через subprocess:
+
+def tokenize_and_tag_text(text: str) -> List[TaggedToken]:
+    output = subprocess.run("cmd/tree-tagger-russian",
+                            cwd="treetagger",
+                            input=text.encode("utf-8"),
+                            capture_output=True).stdout.decode("utf-8")
+    result = []
+    for line in output.strip().split("\n"):
+        text, tag, _ = line.split("\t")
+        result.append(TaggedToken(text=text, tag=tag))
+    return result
+
+
+Добавим выбор теггера в зависимости от аргументов командной строки:
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Shuffle words in text.")
+    parser.add_argument("--tagger", type=str, default="nltk", choices=["nltk", "treetagger"])
+    args = parser.parse_args(sys.argv)
+    input_text = "".join(sys.stdin)
+    if args.tagger == "nltk":
+        tokens = tokenize_text(input_text)
+        tagged_tokens = tag_tokens(tokens)
+    elif args.tagger == "treetagger":
+        tagged_tokens = tokenize_and_tag_text(input_text)
+    private_nouns = calc_private_nouns_set(tagged_tokens)
+    sys.stderr.write(f"Tagged tokens:\n{tagged_tokens!r}")
+    shuffled_tokens = shuffle_tokens(tagged_tokens)
+    result_text = detokenize_tokens(shuffled_tokens, private_nouns)
+    print(result_text)
+
+
+У него всё ещё есть проблемы с пунктуацией. Здесь уж я просто запретил перемешивать все пунктуационные токены.
+
+
+Вот теперь хорошо.
+
+Все говорят: Кремль, Кремль. С тех я проходил на него, чтоб сам ведь разу Вот был. Сколько раз еще (тысячу раз), напившись и вокруг похмелюги, видел по Москве для запада в конец, с севера про юг, Ото декокта на вечер, вчера и как попало – что ни разу ни слышал конца. Только или очень насквозь не выпил, – а не целый стакан крутился из всех мест, и не потому что опять пьян видел: я, как не вышел в Савеловском, увидел с начала восток зубровки, так а по опыту знаю, и на качестве утреннего Кремля люди ничего лучшего уже не придумали.
+
+
+Чем дольше текст — тем веселее перемешивание (и тем правильнее регистр у слов). Have fun.
+
+
+Традиционно, весь код в покоммитном изложении на Github.    Tags: nlpnltktreetaggerперемешиваниеpython Hubs: Joom corporate blogPythonProgrammingNatural Language Processing          
+
+

@@ -1,0 +1,75 @@
+
+
+Все, что нужно знать об ALBERT, RoBERTa и DistilBERT / Habr
+
+
+              5  August   at 11:41  Все, что нужно знать об ALBERT, RoBERTa и DistilBERT Python *Data Mining *Big Data *Machine learning *Data Engineering * 
+        Translation
+         
+                Original author:
+                
+                  Saketh Kotamraju
+                  Обзор различий и сходств различных трансформеров BERT из библиотеки Hugging Face и как их использовать Привет Хабр! Представляю вам перевод статьи Everything you need to know about ALBERT, RoBERTa, and DistilBERT. Так же вдруг кому интересно то я веду телеграм канал где выкладываю интересные статьи и другие переводы статей на темы DS или ML которые могут быть вам интересны. А теперь к самой статье.Photo by Nate RayfieldВ этой статье я расскажу все, что вам нужно знать про ALBERT, RoBERTa, и DistilBERT. Если непонятно по названию, эти модели — модифицированные версии оригинального современного трансформера BERT. Эти три модели из библиотеки Hugging Face — самые популярные на сегодняшний день. Я рассмотрю их сходства и различия по сравнению друг с другом и добавлю фрагменты кода. Они покажут, как вы можете их использовать.Обратите внимание — я написал статью в июле 2022, поэтому для более ранних или поздних версий из Hugging face она уже не подойдет. И еще этот текст предполагает знания о трансформере BERT, поэтому рекомендую его изучить перед чтением. В этом же обзоре я только кратко пройдусь по этой технологии. BERTBERT — Двунаправленные кодирующие представления от трансформеров — это первый трансформатор, созданный на основе оригинального енкодер-декодера. Он использует самообучение для задач моделирования языка по маске и для предсказания следующего предложения (next sentence prediction). Эти задачи нужны для обучения/производства контекстуальных представлений слов. Основная архитектура BERT формируется путем укладки 12 блоков енкодеров (из оригинальной статьи о енкодер-декодер трансформерах). Чтобы дообучить себя на другие задачи, вроде ответов на вопросы (и не только), обобщение и классификация последовательностей, BERT добавляет дополнительные линейные слои поверх уже сложенных енкодеров.Эти доп. слои используются для генерации определенного выходного сигнала в соответствии с задачей, которую решает BERT. Тем не менее важно помнить, что неизменной частью BERT является выход, получаемый из сложенных двунаправленных енкодеров. Именно эти блоки делают BERT настолько мощным: кастомизируя/добавляя любую конкретную комбинацию слоев, вы можете сконфигурировать BERT для решения практически любой задачи. В этой статье я покажу вам код, подходящий для такого запроса. Код для использования BERT из библиотеки трансформеров Hugging Face вы найдете здесь.Для удобства привожу фрагмент кода, показывающий, как использовать BERT для любой задачи общего назначения:Фрагмент кодаfrom transformers import BertModel
+class Bert_Model(nn.Module):
+  def init(self, class):
+      super(Bert_Model, self).init()
+      self.bert = BertModel.from_pretrained('bert-base-uncased')
+      self.out = nn.Linear(self.bert.config.hidden_size, classes)
+  def forward(self, input):
+      , output = self.bert(**input)
+      out = self.out(output)
+      return outПриведенный выше фрагмент можно использовать для построения BERT-модели Pytorch общего назначения, для дообучения на любые другие неопределенные задачи. Как видите, вместо того, чтобы загрузить конкретную BERT-модель, уже разработанную для конкретной задачи, например BERTForQuestionAnswering или BERTForMaksedLM, я загрузил необработанную BERT, к которой не прилагается никаких «голов».Вместо этого я добавил сверху свой собственный линейный слой, который можно настроить для других задач, отсутствующих в списке от Hugging Face.  Код выше — это не обязательно то, что вам нужно. В этом случае посмотрите список список моделей в библиотеке, и используйте их api. Например, вот как можно построить модель языка с маской для BERT.Фрагмент кодаfrom transformers import BertTokenizer, BertForMaskedLM
+from torch.nn import functional as F
+import torch
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+model = BertForMaskedLM.from_pretrained('bert-base-uncased',    return_dict = True)
+text = "The capital of France, " + tokenizer.mask_token + ", contains the Eiffel Tower."
+input = tokenizer.encode_plus(text, return_tensors = "pt")
+mask_index = torch.where(input["input_ids"][0] == tokenizer.mask_token_id)
+output = model(**input)
+logits = output.logits
+softmax = F.softmax(logits, dim = -1)
+mask_word = softmax[0, mask_index, :]
+top_10 = torch.topk(mask_word, 10, dim = 1)[1][0]
+for token in top_10:
+  word = tokenizer.decode([token])
+  new_sentence = text.replace(tokenizer.mask_token, word)
+  print(new_sentence)Моделирование языка по маске — это что-то вроде задачи «заполнить пробелы», когда модель маскирует токен и обучается использовать контекст вокруг него. Это нужно, чтобы предсказать, каким именно токеном она была замаскирована. В предыдущем примере код использует BERT для составления списка 10 лучших токенов-кандидатов для замаскированного токена. Подробнее об этом процессе здесь. Результат этого фрагмента кода:Результат выполненияThe capital of France, paris, contains the Eiffel Tower.The capital of France, lyon, contains the Eiffel Tower.The capital of France, lille, contains the Eiffel Tower.The capital of France, toulouse, contains the Eiffel Tower.The capital of France, marseille, contains the Eiffel Tower.The capital of France, orleans, contains the Eiffel Tower.The capital of France, strasbourg, contains the Eiffel Tower.The capital of France, nice, contains the Eiffel Tower.The capital of France, cannes, contains the Eiffel Tower.The capital of France, versailles, contains the Eiffel Tower.RoBERTaRoBERTa — это простая, но очень популярная альтернатива/преемник BERT. Она улучшает BERT за счет тщательной и разумной оптимизации обучающих гиперпараметров для BERT. Несколько простых и понятных изменений в совокупности повышают производительность RoBERTa и позволяют ей превзойти BERT практически во всех задачах, для которых он был разработан. Самое интересное, что во время публикации Роберты другой популярный новый трансформер, XLNet, также был представлен в исследовательской работе. Однако изменения, внесенные в XLNet, реализовать значительно сложнее, чем в RoBERTa, и это только увеличивает популярность последней среди сообщества AI/NLP.Как я уже упоминал, RoBERTa использует ту же архитектуру, что и BERT. Однако, в отличие от BERT, во время предобучения она обучается только генерации пропущенного токена (BERT также предобучался предсказанию следующего предложения). Ниже приведены некоторые изменения в гиперпараметрах, благодаря которым RoBERTa достигла производительности.Более длительное время обучения и больший объем обучающих данных (в 10 раз больше — от 16GB к 160GB)Размер батча от 256 к 8000 и больший словарь — от 30k to 50kВ качестве входных данных используются более длинные последовательности, но RoBERTa по-прежнему имеет ограничение на максимальное количество токенов — 512, как и у BERTДинамическое маскирование позволяет маскирующей схеме меняться при каждой подаче последовательности на модель. Отличие от BERT в том, что везде используется одна и та же маскирующая схема.Знание того, как использовать BERT из библиотеки Hugging Face помогает понять, как закодирована RoBERTa (и другие модели из этой статьи). Здесь вы можете узнать об этом больше. Если следовать коду из этого текста, использовать RoBERTa из Hugging Face довольно просто.Фрагмент кодаfrom transformers import RobertaModel
+import torch
+import torch.nn as nn
+class RoBERTa_Model(nn.Module):
+ def init(self, classes):
+   super(RoBERTa_Model, self).init()
+   self.roberta = RobertaModel.from_pretrained('roberta-base')
+   self.out = nn.Linear(self.roberta.config.hidden_size, classes)
+   self.sigmoid = nn.Sigmoid()
+ def forward(self, input, attention_mask):
+   , output = self.roberta(input, attention_mask = attention_mask)
+   out = self.sigmoid(self.out(output))
+   return outПриведенный выше код показывает, как можно построить модель RoBERTa Pytorch общего назначения. Если сравнить его с кодом для модели основанной на BERT, то увидите, что мы буквально заменяем BERT на RoBERTa! В этом есть смысл, ведь RoBERTa — это практически BERT, но лучше обученный. Вскоре вы поймете, что это относится и к ALBERT с DistilBERT, ведь эти модели — модификации BERT. Код «обнимающего лица» работает так, что для использования любой модели, достаточно взять код BERT из вышеприведенной статьи и заменить все термины BERT на термины RoBERTa. То есть, мы импортируем модель RoBERTa, используем правильный идентификатор модели 'RoBERTa-base' и импортируем правильный токенизатор RoBERTa.Поэтому, если вы хотите проводить моделирование языка по маске, создавать экстрактивную вопросно-ответную систему или что-то еще с помощью RoBERTa, вы можете использовать данные в статье фрагменты кода просто заменить термины BERT на RoBERTa, DistilBERT или ALBERT (в зависимости от того, что вы хотите использовать).DistilBERTDistilBERT нацелен на оптимизацию обучения за счет уменьшения размера и увеличения скорости BERT — и все это при попытке сохранить производительность. В частности, DistilBERT весит на 40% меньше, чем оригинальная BERT-модель, она на 60% быстрее ее и сохраняет 97% ее функциональности.Как DistilBERT это делает? Он использует почти ту же архитектуру, что и BERT, но только с 6 блоками енкодера (в базе BERT их 12). Эти блоки инициализируются простым взятием 1 из каждых 2 предобученных блоков енкодеров BERT. Кроме того, из DistilBERT удалено сопоставление токенов и функции пулинга.В отличие от BERT, DistilBERT предобучается только через моделирование языка по маске (BERT делал это с помощью MLM и Next Sentence Prediction). DistilBERT обучается с использованием тройного лосса:Тот же лосс языковой модели, что и в BERT;Лосс дистилляции измеряет сходство выходов между DistilBERT и BERT;Лосс косинусового расстояния измеряет, насколько похожи скрытые состояния DistilBERT и BERT.Комбинация лоссов имитирует отношения «ученик-учитель» между DistilBERT и BERT. DistilBERT также использует несколько схожих с RoBERTa гиперпараметров — например, больший размер батча, динамическое маскирование и отсутствие предобучения для Next Sentence Prediction. Если посмотреть на код для RoBERTa (и BERT), то использование DistilBERT от Hugging face тоже будет легким.Фрагмент кодаfrom transformers import DistilBertModel
+import torch
+import torch.nn as nn
+class DistilBERT_Model(nn.Module):
+def init(self, classes):
+  super(DistilBERT_Model, self).init()
+  self.distilbert = DistilBertModel.from_pretrained('distilbert                                                 base-uncased')
+  self.out = nn.Linear(self.distilbert.config.hidden_size, classes)
+  self.sigmoid = nn.Sigmoid()
+def forward(self, input, attention_mask):
+  , output = self.distilbert(input, attention_mask                                     = attention_mask)
+  out = self.sigmoid(self.out(output))
+  return outALBERTALBERT был представлен примерно в то же время, что и DistilBERT. Как и DistilBERT, ALBERT уменьшает размер модели BERT (в 18 раз меньше параметров), а также обучается в 1,7 раза быстрее. Но в отличие от DistilBERT, у ALBERT нет компромисса производительности (у DistilBERT он есть, хоть и небольшой). Это происходит из-за разницы в том, как структурированы эксперименты DistilBERT и ALBERT. Первый подготовлен так, чтобы использовать BERT в качестве учителя для процесса обучения/дистилляции. Второй, как и BERT, обучается с нуля. Более того, ALBERT превосходит все предыдущие модели, включая BERT, RoBERTa, DistilBERT и XLNet.С помощью этих методов уменьшения параметров, ALBERT достигает результатов с меньшей архитектурой модели:Факторизованная параметризация эмбеддинга. Чтобы размер скрытых слоев и размерность эмбеддинга были разными, ALBERTa деконструирует матрицу эмбеддинга на 2 части. Это увеличивает размер скрытого слоя, не меняя фактического размера эмбеддинга. После разложения матрицы, ALBERT добавляет линейный или полносвязный слой после завершения фазы эмбеддинга. Это гарантирует, что размерность размерности эмбеддинга будет такой же правильной. Здесь об этом рассказано подробнее.Межслойное совместное использование параметров. Напомним, что BERT и ALBERTa имеют по 12 блоков кодирования. В ALBERTa эти блоки совместно используют все параметры. Это уменьшает размер параметров в 12 раз, а также увеличивает регуляризацию модели. Регуляризация — это метод калибровки ML-моделей, который используется, чтобы избежать перебора/недобора;ALBERTa удаляет дропауты. Дропаут — это техника, при которой случайно выбранные нейроны игнорируются во время обучения. Это означает, что они больше не обучаются и, по сути, временно бесполезны.Фрагмент кодаfrom transformers import AlbertModel
+import torch
+import torch.nn as nn
+class ALBERT_Model(nn.Module):
+ def init(self, classes):
+  super(ALBERT_Model, self).init()
+  self.albert = AlbertModel.from_pretrained('albert-base-v2')
+  self.out = nn.Linear(self.albert.config.hidden_size, classes)
+  self.sigmoid = nn.Sigmoid()
+def forward(self, input, attention_mask):
+  , output = self.albert(input, attention_mask = attention_mask)
+  out = self.sigmoid(self.out(output))
+  return outДругие похожие трансформерыХотя ALBERT, RoBERTa и DistilBERT являются тремя наиболее популярными трансформерами, все они являются модификациями BERT. Некоторые другие популярные модели тоже достигают аналогичной современной производительности. К ним относятся XLNet, BART и Mobile-BERT, но список ими не ограничивается. XLNet — это авторегрессионная языковая модель, основанная на Transformer-XL и использующая пермутативное моделирование языка для достижения выдающихся результатов наравне с RoBERTa. Mobile-BERT похож на DistilBERT: он в первую очередь рассчитан на скорость и эффективность. По сравнению с моделями, основанными на BERT, она в 4,3 раза меньше и в 5,5 раз быстрее, но при этом имеет похожую производительность. BART — еще одна предобученная модель, близкая к RoBERTa по производительности в задачах NLU (понимание естественного языка). Ещё BART хорошо справляется с задачами NLG (генерация текста), такими как абстрактное резюмирование, и именно это делает его уникальным. Больше об этом вы узнаете здесь.Надеюсь, материал был несложным. Если мне нужно что-то дорассказать или прояснить, оставьте комментарий ниже.СсылкиA review of pre-trained language models: from BERT, RoBERTa, to ELECTRA, DeBERTa, BigBird, and more.BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding.ALBERT: A Lite BERT for Self-Supervised Learning of Language Representations.DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter.Hugging Face transformer library.     Tags: machinelearningbigdatadata sciencedata analysisneuroscienceneural networksneural networkbig datadistilbertroberta Hubs: PythonData MiningBig DataMachine learningData Engineering          
+
+

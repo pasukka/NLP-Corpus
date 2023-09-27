@@ -1,0 +1,195 @@
+
+
+Бот-сказочник, или как генерировать истории с помощью ChatGPT и Telegram / Habr
+
+
+               Бот-сказочник, или как генерировать истории с помощью ChatGPT и Telegram Level of difficulty  
+    Easy
+   Reading time  
+    5 min
+   Views  4.7K Selectel corporate blog JavaScript *Programming *Node.JS *Artificial Intelligence  
+    Tutorial
+        
+
+Представьте, что вам нужно написать художественный роман. У вас есть ключевые идеи, продуманы основные повороты событий, но нет возможности объединить все в одну историю.
+
+
+Кажется, что написать захватывающую историю просто. Появилась идея — запиши, пришла новая мысль — запиши ее тоже. Потом добавь деталей и эмоций — и готово. Но это иногда последний пункт забирает больше всего времени.
+
+
+Такая же проблема может встретиться, например, если нужно написать пост или оформить описание рабочего проекта. Если вам это знакомо, то просто автоматизируйте процесс. Можно написать специального бота, который будет из тезисов генерировать цельную историю с помощью ChatGPT, а после — записывать в Notion. Реализовать такой проект и задеплоить его на сервер несложно — посмотрим, как это сделать.
+
+Создаем приложение Node.js
+
+Для начала подготовим рабочую среду и создадим проект Node.js:
+
+npm init -y
+npm i -D nodemon // для разработки 
+npm i @notionhq/client config openai telegraf 
+
+
+После изменим поле type в package.json, чтобы проект умел работать с import & export:
+
+"type": "module",
+"scripts": { 
+    "dev": "nodemon ./src/main.js", 
+    "start": "node ./src/main.js" 
+},
+
+
+Далее создадим ./src/main.js:
+
+import { Telegraf } from 'telegraf'
+import { message } from 'telegraf/filters'
+import config from 'config'
+const bot = new Telegraf(config.get('TELEGRAM_TOKEN'), {
+  handlerTimeout: Infinity,
+})
+bot.command('start', (ctx) =>
+  ctx.reply(
+    'Добро пожаловать. Отправьте текстовое сообщение с тезисами про историю.'
+  )
+)
+bot.on(message('text'), ctx => {
+ // тут будет логика приложения-интегратора
+})
+bot.launch()
+
+Получаем токен для Telegram-бота
+
+Следующим этапом нужно создать Telegram-бота. Для этого понадобится API-токен, который можно получить у @BotFather с помощью команды /newbot.
+
+
+
+Далее создаем конфигурацию, в которую поместим сам токен:
+
+mkdir config 
+touch default.json
+
+{ 
+"TELEGRAM_TOKEN": "ВАШ ТОКЕН ДЛЯ БОТА TELEGRAM", 
+}
+
+Пишем логику ChatGPT
+
+Для начала получаем токен для работы с сервисами OpenAI, а после — заносим его в конфигурацию:
+
+{ 
+"TELEGRAM_TOKEN": "ВАШ ТОКЕН ДЛЯ БОТА TELEGRAM",
+"OPENAI_KEY": "КЛЮЧ ДЛЯ РАБОТЫ С ChatGPT"
+}
+
+
+Теперь создаем файл ./src/chatgpt.js и пишем скрипт:
+
+import OpenAI from 'openai'
+import config from 'config'
+const CHATGPT_MODEL = 'gpt-3.5-turbo'
+const ROLES = {
+  ASSISTANT: 'assistant',
+  SYSTEM: 'system',
+  USER: 'user',
+}
+const openai = new OpenAI({
+  apiKey: config.get('OPENAI_KEY'),
+})
+const getMessage = (m) => `
+  Напиши на основе этих тезисов последовательную эмоциональную историю: ${m}
+  Эти тезисы с описание ключевых моментов дня. 
+  Необходимо в итоге получить такую историю, чтобы я запомнил этот день и смог рассказать ее друзьям. Текст не должен быть больше 100 слов. Главное — чтобы были эмоции, правильная последовательность и учитывался контекст.
+`
+export async function chatGPT(message = '') {
+  const messages = [
+    {
+      role: ROLES.SYSTEM,
+      content:
+        'Ты опытный копирайтер, который пишет краткие эмоциональные статьи для соц сетей.',
+    },
+    { role: ROLES.USER, content: getMessage(message) },
+  ]
+  try {
+    const completion = await openai.chat.completions.create({
+      messages,
+      model: CHATGPT_MODEL,
+    })
+    return completion.choices[0].message
+  } catch (e) {
+    console.error('Error while chat completion', e.message)
+  }
+}
+
+
+Обратите внимание: мы присваиваем ChatGPT роль копирайтера для получения более качественных текстов. А также задаем первичное сообщение с указаниями для бота.
+
+Интегрируем Notion
+
+Самое время интегрировать Notion — для этого необходимо получить ключ к базе. В итоге получаем два ключа и готовую базу данных. Добавляем в конфигурацию:
+
+{
+  "TELEGRAM_TOKEN": "ВАШ ТОКЕН ДЛЯ БОТА TELEGRAM",
+  "OPENAI_KEY": "КЛЮЧ ДЛЯ CHATGPT",
+  "NOTION_KEY": "КЛЮЧ ДЛЯ ИНТЕГРАЦИИ",
+  "NOTION_DB_ID": "ID БАЗЫ ДАННЫХ"
+}
+
+
+В базе данных Notion (компонент inline database) указываем базовые поля — имя и дату. В приложении создаем отдельный файл ./src/notion.js и добавляем в него скрипт:
+
+import { Client } from '@notionhq/client'
+import config from 'config'
+const notion = new Client({
+  auth: config.get('NOTION_KEY'),
+})
+export async function create(short, text) {
+  const dbResponse = await notion.pages.create({
+    parent: { database_id: config.get('NOTION_DB_ID') },
+    properties: {
+      Name: {
+        title: [
+          {
+            text: {
+              content: short,
+            },
+          },
+        ],
+      },
+      Date: {
+        date: {
+          start: new Date().toISOString(),
+        },
+      },
+    },
+  })
+  return dbResponse
+}
+
+
+Для того, чтобы полученный от ChatGPT текст записать как контент страницы, добавляем еще один скрипт:
+
+const pageResponse = await notion.blocks.children.append({
+    block_id: dbResponse.id,
+    children: [
+      {
+        object: 'block',
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [
+            {
+              type: 'text',
+              text: {
+                content: text,
+              },
+            },
+          ],
+        },
+      },
+    ],
+  })
+
+Создаем Loader
+
+Так как выполнение скрипта занимает время, будем показывать пользователю процесс загрузки, Loader. В файле ./src/loader.js описываем логику этого объекта:
+
+export class Loader {
+  icons = [
+    '

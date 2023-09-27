@@ -1,0 +1,693 @@
+
+
+Обзор методов создания эмбедингов предложений, Часть1 / Habr
+
+
+               13  August  2020 at 16:28  Обзор методов создания эмбедингов предложений, Часть1 Python *Data Mining *Natural Language Processing *      Представте себе, как было бы удобно, написать предложение и найти похожее к нему по смыслу. Для этого нужно уметь векторизовать всё предложение, что может быть очень не тривиальной задачей.
+По специфике своей работы, я должен искать похожие запросы в службу поддержки и даже имея достаточно большую разметку, бывает тяжело собрать необходимое количество сообщений подходящих по тематике, но написанных другими словами. 
+Ниже обзорное исследование на способы векторизации всего предложения и не просто векторизации, а попытка векторизовать предложение с учётом его смысла.
+Например две фразы 'эпл лучше самсунг' от 'самсунг лучше эпл', должны быть на противоположном конце по одному из значений вектора, но при этом совпадать по другим. 
+Можно привести аналогию с картинкой ниже. По шкале от кекса до собаки они находятся на разных концах, а по количеству чёрных точек и цвету объекта на одном.
+
+Вот тут сборник статей по векторизации предложений 
+Методы в статьях очень не тривиальные и интересны для изучения, но минусы в том, что:
+
+они испытывались на английском языке 
+в каждой статье написано, что они превзошли предшественников, но сравнения проводились на разных датасетах и нет возможности сделать рейтинг
+
+Поэтому ниже обзорно — сравнительный анализ 7 разных методов векторизации предложений на одном датасете.
+Содержание
+Подготовка
+
+Функция оценки 
+
+Методы BOW
+
+1.1. простой BOW
+
+1.2. BOW c леммами слов
+
+1.3. BOW с леммами и очисткой стопслов
+
+1.4. LDA
+Методы, использующие эмбединги токенов
+
+2.1 Среднее по эмбедингу всех слов
+
+2.2 Среднее по эмбедингу с очисткой стоп слов
+
+2.3 Среднее по эмбедингу с весами tf-idf 
+Languade Models
+
+3.1 Language Model on embedings
+
+3.2 Language Model on index 
+BERT
+
+4.1 rubert_cased_L-12_H-768_A-12_pt
+
+4.2 ru_conversational_cased_L-12_H-768_A-12_pt
+
+4.3 sentence_ru_cased_L-12_H-768_A-12_pt
+
+4.4 elmo_ru-news_wmt11-16_1.5M_steps
+
+4.5 elmo_ru-wiki_600k_steps
+
+4.6 elmo_ru-twitter_2013-01_2018-04_600k_steps
+Автоэнкодеры
+
+5.1 Автоэнкодер embedings -> embedings
+
+5.2 Автоэнкодер embedings -> indexes
+
+5.3 Автоэнкодер архитектура LSTM -> LSTM
+
+5.4 Автоэнкодер архитектура LSTM -> LSTM -> indexes 
+Эмбединги на Transfer Learning
+
+6.1 Эмбединги на BOW
+
+6.2 Эмбединг на LSTM + MaxPooling
+
+6.3 Эмбединг на LSTM + Conv1D + AveragePooling
+
+6.4 Эмбединг на LSTM + Inception + Attention 
+Triplet loss
+
+7.1 Triplet loss на BOW
+
+7.2 Triplet loss на embedings 
+
+Подготовка
+import pandas as pd
+import numpy as np
+from collections import defaultdict, Counter
+import random
+from tqdm.notebook import tqdm
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_distances, euclidean_distances
+from sklearn.decomposition import LatentDirichletAllocation
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.layers import Input, Bidirectional, LSTM, Dense, MaxPooling1D, AveragePooling1D, Conv1D
+from tensorflow.keras.layers import Flatten, Reshape, Concatenate, Permute, Activation, Dropout, multiply
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.models import Model
+from tensorflow.keras.losses import cosine_similarity
+from tensorflow.keras import regularizers
+import tensorflow.keras.backend as K
+import tensorflow as tf
+import pymorphy2
+import nltk
+nltk.download('stopwords')
+from nltk.corpus import stopwords
+import numpy as np
+import matplotlib.pyplot as plt
+import pickle
+import os
+import re
+from conllu import parse_incr
+База знаний
+Источник знаний и разметки по тематикам
+Обяснение на Вики
+files = {'train': 'ru_syntagrus-ud-train.conllu',
+         'test':  'ru_syntagrus-ud-test.conllu',
+         'dev':   'ru_syntagrus-ud-dev.conllu'}
+database = {}
+for data_type in files:
+    filename = files[data_type]
+    database = {}
+    with open(os.path.join('UD_Russian-SynTagRus-master', filename), encoding='utf-8') as f:
+        parsed = parse_incr(f)
+        for token_list in parsed:
+            topic_name = token_list.metadata['sent_id'].split('.')[0]
+            # убрём цифры из названий темы
+            topic_name = re.sub(r'\d+', '', topic_name)
+            if topic_name not in database:
+                database[topic_name] = []
+            sentence = ' '.join([token['form'] for token in token_list]).lower()
+            database[topic_name].append(sentence)
+Выбираем из базы знаний три темы с примерно равным количество сообщений в них, которые будут использоваться для оценки методов и удалим их из базы знаний.
+choosen_for_evaluation = ['I_slepye_prozreyut',
+                          'Interviyu_Mariny_Astvatsaturyan',
+                          'Byudzhet']
+texts_for_evaluation = {}
+texts_for_training = {}
+for topic in database:
+    if topic in choosen_for_evaluation:
+        texts_for_evaluation[topic] = database[topic]
+    else:
+        texts_for_training[topic] = database[topic]
+TEXTS_CORPUS = [sentence for topic in texts_for_training for sentence in texts_for_training[topic]]
+# напечатаем примеры
+for topic in texts_for_evaluation:
+    print(topic, len(texts_for_evaluation[topic]))
+    for index, sentence in enumerate(texts_for_evaluation[topic]):
+        print('\t', sentence[:100])
+        if index > 5:
+            break
+    print('\n')
+Примеры выводов
+Byudzhet 70
+     кандидат исторических наук н. митрофанов .
+     все медные и серебряные на императорском кону .
+     екатерина ii и бюджет .
+     приходит день , и на все лады отовсюду звучит слово " бюджет " .
+     газеты расшифровывают смысл его основополагающих статей , сравнивая прошлогодние
+     многие возмущаются по поводу малого внимания к культуре , обороне , армии … - пр
+     конформисты принимаются разоблачать " выскочек " , уличая их в передергивании пр
+Interviyu_Mariny_Astvatsaturyan 72
+     " моя научная журналистика стоит на царских костях " .
+     - как вы , биолог , пришли в научную журналистику ? с чего всё начиналось ?
+     - началось по воле случая , в 1993-м .
+     одному из тогдашних музыкальных ведущих " эха москвы " понадобились записи ива м
+     у нас дома , сколько я себя помню , лежали виниловые пластинки - концертные запи
+     я предоставила их для подготовки радиопередачи об иве монтане .
+     так я познакомилась с тогдашней редакцией " эха " , которая сидела на никольской
+I_slepye_prozreyut 72
+     и слепые прозреют …
+     опыты , проведенные специалистами института мозга человека ран , подтвердили сущ
+     три года назад московский ученый вячеслав бронников начал учить слепых видеть .
+     он разработал оригинальную методику , позволяющую резко активизировать деятельно
+     в результате за десять дней занятий бронников развивал у своих подопечных навыки
+     дети с пороками зрения после специального обучения могли кататься на велосипедах
+     слепой человек , как утверждают медики , видит перед собой пелену .
+Для оценки нужна только одна функция от каждого метода get_similarity_values, которая будет принимать на вход сообщения и возвращать расстояния от каждого к каждому. Сообщения сортируются по увеличению расстояния и рассчитывается сколько баллов набрал этот метод.
+Баллы будут считаться так: всего 3 темы с 70, 72 и 72 предложениями в каждом. Чем ближе сообщение распологается к тому, которое мы оцениваем, тем больше баллов за него начисляется. Убываение ценности предложения идёт пропорционально индексу. Т.е. если самое ближайшее сообщение из той же темы, то +214 баллов, если второе сообщение из другой темы, то -213 и т.д. до последнего.
+Теоретически максимально возможное значение = sum(214… 214 — 72) — sum(214-72… 0) + 7626 = 10395 
+Теоретически минимально возможное значение = -sum(214… 72) + sum(72… 0) + 7626 = -10053
+np.random.seed(42)
+random.seed(777)
+index2topic = {}
+index2text = {}
+index = 0
+for topic in texts_for_evaluation:
+    for sentence in texts_for_evaluation[topic]:
+        index2topic[index] = topic
+        index2text[index] = sentence
+        index += 1
+def get_similarity_values(sentences):
+    return np.random.rand(len(sentences), len(sentences))
+chart_methods = {}
+bottom_minimum = -7626.2336448598135
+def evaluate(get_similarity_values, method_name=None, add_to_chart=True):
+    test_messages = [index2text[index] for index in range(len(index2text))]
+    distances_each_to_each = get_similarity_values(test_messages)
+    evaluations = []
+    for target_index in index2topic:
+        distances = distances_each_to_each[target_index]
+        distances_indexes = sorted(zip(distances, range(len(index2topic))), key=lambda x: x[0])
+        evaluation_result = 0
+        for i, (distance, index) in enumerate(distances_indexes):
+            if index2topic[index] == index2topic[target_index]:
+                evaluation_result += len(test_messages) - i
+            else:
+                evaluation_result -= len(test_messages) - i
+        evaluations.append(evaluation_result)        
+    # сделаем случайное распределние искусственным нулём (baseline)
+    result = round(np.mean(evaluations) - bottom_minimum, 1)
+    if add_to_chart:
+        #добавляем на график, только лучший результат по всем прогонам
+        if method_name not in chart_methods or result > chart_methods[method_name][0]:
+            chart_methods[method_name] = (result, np.std(evaluations))
+    return f'{method_name}: {str(result)}'
+def parse_result(result):
+    return float(new_result.split(': ')[1])
+evaluate(get_similarity_values, 'random arrange')
+'random arrange: 0.0'
+1. Методы BOW
+1.1 BOW
+Будем определять расстояни между предложеними по словам, которые находятся в предложении без предварительной обработки (сохраняя все знаки препинания).
+count_vectorizer = CountVectorizer()
+corpus = TEXTS_CORPUS
+count_vectorizer.fit(corpus)
+def get_similarity_values(sentences):
+    sentences_bow = count_vectorizer.transform(sentences)
+    distances = cosine_distances(sentences_bow, sentences_bow)
+    return distances
+evaluate(get_similarity_values, 'BOW')
+'BOW: 693.1'
+1.2 BOW с леммами слов
+Тот же алгоритм, но теперь будут использоваться леммы слов.
+morph = pymorphy2.MorphAnalyzer()
+def lemmatize(corpus, verbose=False):
+    clear_corpus = []
+    if verbose:
+        iterator = tqdm(corpus, leave=False)
+    else:
+        iterator = corpus
+    for sentence in iterator:
+        tokens = sentence.split() # разбиваем текст на слова
+        res = []
+        for token in tokens:
+            p = morph.parse(token)[0]
+            res.append(p.normal_form)
+        clear_corpus.append(' '.join(res))
+    return clear_corpus
+count_vectorizer = CountVectorizer()
+corpus = lemmatize(TEXTS_CORPUS, True)
+count_vectorizer.fit(corpus)
+def get_similarity_values(sentences):
+    sentences_bow = count_vectorizer.transform(lemmatize(sentences))
+    distances = cosine_distances(sentences_bow, sentences_bow)
+    return distances
+evaluate(get_similarity_values, 'BOW с леммами слов', False)
+'BOW с леммами слов: 1645.8'
+1.3 BOW с леммами с очисткой стоп слов и знаков препинания
+ru_stopwords = stopwords.words('russian')
+ru_stopwords += ['.', ',', '"', '!',
+                 '?','(', ')', '-',
+                 ':', ';', '_', '\\']
+def delete_stopwords(corpus, verbose=False):
+    clear_corpus = []
+    if verbose:
+        iterator = tqdm(corpus, leave=False)
+    else:
+        iterator = corpus
+    for sentence in iterator:
+        tokens = sentence.split() # разбиваем текст на слова
+        res = []
+        without_stopwords = [token for token in tokens if token not in ru_stopwords]
+        clear_corpus.append(' '.join(without_stopwords))
+    return clear_corpus
+count_vectorizer = CountVectorizer()
+corpus = lemmatize(delete_stopwords(TEXTS_CORPUS), True)
+count_vectorizer.fit(corpus)
+def get_similarity_values(sentences):
+    sentences_bow = count_vectorizer.transform(lemmatize(delete_stopwords(sentences)))
+    distances = cosine_distances(sentences_bow, sentences_bow)
+    return distances
+evaluate(get_similarity_values, 'BOW с леммами и без стоп слов')
+'BOW с леммами и без стоп слов: 1917.6'
+1.4 LDA
+def similarity_values_wrapper(lda, count_vectorizer, do_lemmatize=False, do_delete_stopwords=False):
+    def get_similarity_values(sentences):
+        if do_delete_stopwords:
+            sentences = delete_stopwords(sentences)
+        if do_lemmatize:
+            sentences = lemmatize(sentences)
+        sent_vector = count_vectorizer.transform(sentences)
+        sent_vector = lda.transform(sent_vector)
+        distances = cosine_distances(sent_vector, sent_vector)
+        return distances
+    return get_similarity_values
+lda = LatentDirichletAllocation(n_components=300)
+corpus = TEXTS_CORPUS
+count_vectorizer = CountVectorizer().fit(corpus)
+corpus = count_vectorizer.transform(corpus)
+lda.fit(corpus)
+get_similarity_values = similarity_values_wrapper(lda, count_vectorizer)
+print(evaluate(get_similarity_values, 'LDA', False))
+lda = LatentDirichletAllocation(n_components=300)
+corpus = lemmatize(TEXTS_CORPUS, True)
+count_vectorizer = CountVectorizer().fit(corpus)
+corpus = count_vectorizer.transform(corpus)
+lda.fit(corpus)
+get_similarity_values = similarity_values_wrapper(lda, count_vectorizer, do_lemmatize=True)
+print(evaluate(get_similarity_values, 'LDA с леммами', True))
+lda = LatentDirichletAllocation(n_components=300)
+corpus = lemmatize(delete_stopwords(TEXTS_CORPUS), True)
+count_vectorizer = CountVectorizer().fit(corpus)
+corpus = count_vectorizer.transform(corpus)
+lda.fit(corpus)
+get_similarity_values = similarity_values_wrapper(lda, count_vectorizer, do_lemmatize=True, do_delete_stopwords=True)
+print(evaluate(get_similarity_values, 'LDA с леммами и без стоп слов', False))
+LDA: 344.7
+LDA с леммами: 1092.1
+LDA с леммами и без стоп слов: 1077.2
+%matplotlib inline
+def plot_results():
+    methods = sorted(chart_methods.items(), key=lambda x: x[1][0])
+    labels = [m[0] for m in methods]
+    x_pos = np.arange(len(labels))
+    mean = [m[1][0] for m in methods]
+    std = [m[1][1] for m in methods]
+    # Build the plot
+    fig, ax = plt.subplots(figsize=(12,8))
+    ax.bar(x_pos,
+           mean,
+           yerr=std,
+           align='center',
+           alpha=0.5,
+           ecolor='black',
+           capsize=10)
+    ax.set_ylabel('Баллы и стандартное отклонение')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(labels, rotation=20, ha='right')
+    ax.set_title('Сранительный график методов')
+    ax.yaxis.grid(True)
+    plt.show()
+plot_results()
+
+2. Методы, использующие эмбединги токенов
+Будем использовать предобученные эмбединги и добавим возможность выбирать метод векторизации и фунцию расстояния. 
+Здесь можно скачать fasttext.
+А вот тут ссылка для скачивания и инструкция использования gensim модели word2vec.
+# Скачивание предобученных эмбедингов
+import fasttext.util
+from wikipedia2vec import Wikipedia2Vec
+fasttext.util.download_model('ru', if_exists='ignore')
+wiki2vec = Wikipedia2Vec.load('ruwiki_20180420_300d.pkl')
+ft = fasttext.load_model('cc.ru.300.bin')
+2.1 Среднее по эмбедингу слов
+def vectorize(token, use_word2vec=True, use_fasttext=True):
+    assert use_word2vec or use_fasttext
+    if use_fasttext:
+        try:
+            fast_text_vector = ft.get_word_vector(token)
+        except KeyError:
+            fast_text_vector = np.zeros((ft.get_dimension()))
+    if use_word2vec:
+        try:
+            word2vec_vector = wiki2vec.get_word_vector(token)
+        except KeyError:
+            word2vec_vector = np.zeros((len(wiki2vec.get_word_vector('the'))))
+    if use_fasttext and use_word2vec:
+        return np.concatenate([word2vec_vector, fast_text_vector])
+    elif use_fasttext:
+        return np.array(fast_text_vector)
+    elif use_word2vec:
+        return np.array(word2vec_vector)
+    else:
+        return 'something went wrong on vectorisation'
+print(np.shape(vectorize('any_token')))
+def similarity_values_wrapper(use_word2vec=True, use_fasttext=True, distance_function=cosine_distances):
+    def get_similarity_values(sentences):
+        sent_vector = []
+        for sentence in sentences:
+            sentence_vector = []
+            for token in sentence.split():
+                sentence_vector.append(vectorize(token, use_word2vec, use_fasttext))
+            sent_vector.append(np.mean(sentence_vector, axis=0))
+        distances = distance_function(sent_vector, sent_vector)
+        return distances
+    return get_similarity_values
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=True, distance_function=euclidean_distances)
+print(evaluate(get_similarity_values, 'среднее по embedings с euclidean_distances с word2vec + fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=False, use_fasttext=True, distance_function=euclidean_distances)
+print(evaluate(get_similarity_values, 'среднее по embedings с euclidean_distances с fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=False, distance_function=euclidean_distances)
+print(evaluate(get_similarity_values, 'среднее по embedings с euclidean_distances с word2vec'))
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=True, distance_function=cosine_distances)
+print(evaluate(get_similarity_values, 'среднее по embedings с cosine_distance с word2vec + fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=False, use_fasttext=True, distance_function=cosine_distances)
+print(evaluate(get_similarity_values, 'среднее по embedings с cosine_distance с fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=False, distance_function=cosine_distances)
+print(evaluate(get_similarity_values, 'среднее по embedings с cosine_distance с word2vec'))
+среднее по embedings с euclidean_distances с word2vec + fast_text: 1833.6
+
+среднее по embedings с euclidean_distances с fast_text: 913.5
+
+среднее по embedings с euclidean_distances с word2vec: 1941.6
+
+среднее по embedings с cosine_distance с word2vec + fast_text: 2278.1
+
+cреднее по embedings с cosine_distance с fast_text: 829.2
+
+среднее по embedings с cosine_distance с word2vec: 2437.7
+2.2 Среднее по эмбедингу с предварительной очисткой стоп слов
+def similarity_values_wrapper(use_word2vec=True, use_fasttext=True, distance_function=cosine_distances):
+    def get_similarity_values(sentences):
+        sentences = delete_stopwords(sentences)
+        sent_vector = []
+        for sentence in sentences:
+            sentence_vector = []
+            for token in sentence.split():
+                sentence_vector.append(vectorize(token, use_word2vec, use_fasttext))
+            sent_vector.append(np.mean(sentence_vector, axis=0))
+        distances = distance_function(sent_vector, sent_vector)
+        return distances
+    return get_similarity_values
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=True, distance_function=euclidean_distances)
+print(evaluate(get_similarity_values, 'среднее по embedings без стопслов с euclidean_distances с word2vec + fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=False, use_fasttext=True, distance_function=euclidean_distances)
+print(evaluate(get_similarity_values, 'среднее по embedings без стопслов с euclidean_distances с fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=False, distance_function=euclidean_distances)
+print(evaluate(get_similarity_values, 'среднее по embedings без стопслов с euclidean_distances с word2vec'))
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=True)
+print(evaluate(get_similarity_values, 'среднее по embedings без стопслов с cosine_distance с word2vec + fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=False, use_fasttext=True)
+print(evaluate(get_similarity_values, 'среднее по embedings без стопслов с cosine_distance с fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=False)
+print(evaluate(get_similarity_values, 'среднее по embedings без стопслов с cosine_distance с word2vec'))
+среднее по embedings без стопслов с euclidean_distances с word2vec + fast_text: 2116.9
+
+среднее по embedings без стопслов с euclidean_distances с fast_text: 1314.5
+
+среднее по embedings без стопслов с euclidean_distances с word2vec: 2159.1
+
+среднее по embedings без стопслов с cosine_distance с word2vec + fast_text: 2779.7
+
+среднее по embedings без стопслов с cosine_distance с fast_text: 2199.0
+
+среднее по embedings без стопслов с cosine_distance с word2vec: 2814.4
+2.3 Среднее по эмбедингу с весами tf-idf
+tf_idf_vectorizer = TfidfVectorizer()
+tf_idf_vectorizer.fit(TEXTS_CORPUS)
+vocab = tf_idf_vectorizer.get_feature_names()
+def similarity_values_wrapper(use_word2vec=True, use_fasttext=True, distance_function=cosine_distances):
+    def get_similarity_values(sentences):
+        sent_vector = [[]]*len(sentences)
+        weights_data = tf_idf_vectorizer.transform(sentences).tocoo()
+        for row, col, weight in zip(weights_data.row, weights_data.col, weights_data.data):
+            sent_vector[row].append(weight*vectorize(vocab[col], use_word2vec, use_fasttext))
+        for row in range(len(sent_vector)):
+            if not sent_vector[row]:
+                sent_vector.append((len(vectorize('zoros_vector'))))
+        sent_vector = np.sum(sent_vector, axis=1)
+        distances = distance_function(sent_vector, sent_vector)
+        return distances
+    return get_similarity_values
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=True)
+print(evaluate(get_similarity_values,'среднее по embedings с tf-idf с cosine_distance с word2vec + fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=False, use_fasttext=True)
+print(evaluate(get_similarity_values,'среднее по embedings с tf-idf с cosine_distance с fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=False)
+print(evaluate(get_similarity_values,'среднее по embedings с tf-idf с cosine_distance с word2vec', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=True, distance_function=euclidean_distances)
+print(evaluate(get_similarity_values,'среднее по embedings с tf-idf с euclidian_distance с word2vec + fast_text', add_to_chart=True))
+get_similarity_values = similarity_values_wrapper(use_word2vec=False, use_fasttext=True, distance_function=euclidean_distances)
+print(evaluate(get_similarity_values,'среднее по embedings с tf-idf с euclidian_distance с fast_text', add_to_chart=False))
+get_similarity_values = similarity_values_wrapper(use_word2vec=True, use_fasttext=False, distance_function=euclidean_distances)
+print(evaluate(get_similarity_values,'среднее по embedings с tf-idf с euclidian_distance с word2vec', add_to_chart=False))
+среднее по embedings с tf-idf с cosine_distance с word2vec + fast_text: -133.6
+
+среднее по embedings с tf-idf с cosine_distance с fast_text: 9.0
+
+среднее по embedings с tf-idf с cosine_distance с word2vec: -133.6
+
+среднее по embedings с tf-idf с euclidian_distance с word2vec + fast_text: 6.4
+
+среднее по embedings с tf-idf с euclidian_distance с fast_text: -133.6
+
+среднее по embedings с tf-idf с euclidian_distance с word2vec: -133.6
+plot_results()
+
+Методы без учителя
+Следующие несколько моделей потребуют потоковой генерации данных, поэтому сделаем универсальные генераторы.
+max_len = 20
+min_len = 5
+embedding_size = len(vectorize('any token'))
+class EmbedingsDataGenerator():
+    def __init__(self, texts_corpus=TEXTS_CORPUS, min_len=5, max_len=20, batch_size=32, batches_per_epoch=100, use_word2vec=True, use_fasttext=True):
+        self.texts = texts_corpus
+        self.min_len = min_len
+        self.max_len = max_len
+        self.batch_size = batch_size
+        self.batches_per_epoch = batches_per_epoch
+        self.use_word2vec = use_word2vec
+        self.use_fasttext = use_fasttext
+        self.embedding_size = len(vectorize('token', use_word2vec=self.use_word2vec, use_fasttext=self.use_fasttext))
+    def vectorize(self, sentences):
+        vectorized_sentences = []
+        for text in sentences:
+            text_vec = []
+            tokens = str(text).split()
+            for token in tokens:
+                text_vec.append(vectorize(token, use_word2vec=self.use_word2vec, use_fasttext=self.use_fasttext))
+            vectorized_sentences.append(text_vec)
+        vectorized_sentences = pad_sequences(vectorized_sentences, maxlen=self.max_len, dtype='float32')
+        return vectorized_sentences
+    def __iter__(self):
+        for _ in tqdm(range(self.batches_per_epoch), leave=False):
+            X_batch = []
+            y_batch = []
+            finished_batch = False
+            while not finished_batch:
+                text = random.choice(self.texts)
+                tokens = str(text).split()
+                if len(tokens) < self.min_len:
+                    continue
+                x_vec = []
+                for token in tokens:
+                    token_vec = vectorize(token, use_word2vec=self.use_word2vec, use_fasttext=self.use_fasttext)
+                    if len(x_vec) >= self.min_len:
+                        X_batch.append(x_vec)
+                        y_batch.append(token_vec)
+                        if len(X_batch) == self.batch_size:
+                            X_batch = pad_sequences(X_batch, maxlen=self.max_len, dtype='float32')
+                            yield np.array(X_batch), np.array(y_batch)
+                            finished_batch = True
+                            break
+                    x_vec.append(token_vec)
+class IndexesDataGenerator(EmbedingsDataGenerator):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.token2index = {}
+        index = 0
+        for text in self.texts:
+            tokens = str(text).split()
+            for token in tokens:
+                if token not in self.token2index:
+                    self.token2index[token] = index
+                    index += 1
+    def __iter__(self):
+        for _ in tqdm(range(self.batches_per_epoch), leave=False):
+            X_batch = []
+            X_batch_indexes = []
+            y_batch = []
+            finished_batch = False
+            while not finished_batch:
+                text = random.choice(self.texts)
+                tokens = str(text).split()
+                if len(tokens) < self.min_len:
+                    continue
+                x_vec = []
+                x_tokens = []
+                for token in tokens:
+                    token_vec = vectorize(token, use_word2vec=self.use_word2vec, use_fasttext=self.use_fasttext)
+                    if len(x_vec) >= self.min_len:
+                        X_batch.append(x_vec)
+                        X_batch_indexes.append(to_categorical(x_tokens, num_classes=len(self.token2index)))
+                        y_batch.append(self.token2index[token])
+                        if len(X_batch) == self.batch_size:
+                            X_batch = pad_sequences(X_batch, maxlen=self.max_len, dtype='float32')
+                            X_batch_indexes = pad_sequences(X_batch_indexes, maxlen=self.max_len, dtype='int32')
+                            y_batch = to_categorical(y_batch, num_classes=len(self.token2index))
+                            yield np.array(X_batch), np.array(X_batch_indexes), np.array(y_batch)
+                            finished_batch = True
+                            break
+                    x_vec.append(token_vec)
+                    x_tokens.append(self.token2index[token])
+Если кажтся, что потоковая генерация слишком дорогая, то оцените время, которое занимает генерация 100 батчей с размером батча 32, получается:
+data_generator = EmbedingsDataGenerator()
+%%timeit
+for x, y in data_generator:
+    pass
+448 ms ± 65.6 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+data_generator = IndexesDataGenerator()
+%%timeit
+for x_e, x_i, y_i in data_generator:
+    pass
+5.77 s ± 115 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+3. Languade Models
+Нейронная сеть угадывает следующее слово в преложении. Предсказание по всей длине текста, является эмбедингом предложения.
+
+Угадывать будем на основании предыдущих слов: максимум 20 и минимум 5.
+def similarity_values_wrapper(embedder, vectorizer, distance_function=cosine_distances):
+    def get_similarity_values(sentences):
+        sent_vec = vectorizer(sentences)
+        sent_embedings = embedder(sent_vec)
+        distances = distance_function(sent_embedings, sent_embedings)
+        return distances
+    return get_similarity_values
+3.1 Language Model on embedings
+def model_builder(data_generator):
+    complexity = 500
+    inp = Input(shape=(data_generator.max_len, data_generator.embedding_size))
+    X = inp
+    X = LSTM(complexity, return_sequences=True)(X)
+    X = LSTM(complexity)(X)
+    X = Dense(complexity, activation='elu')(X)
+    X = Dense(complexity, activation='elu')(X)
+    X = Dense(data_generator.embedding_size, activation='linear')(X)
+    model = Model(inputs=inp, outputs=X)
+    model.compile(loss=cosine_similarity, optimizer='adam')
+    model.summary()
+    return model
+data_generator = EmbedingsDataGenerator(use_fasttext=False)
+next_word_model = model_builder(data_generator)
+get_similarity_values = similarity_values_wrapper(next_word_model.predict, data_generator.vectorize)
+new_result = -10e5
+for i in tqdm(range(1000)):
+    if i%3==0:
+        previous_result = new_result
+        new_result = evaluate(get_similarity_values, 'Language Model on embedings')
+        new_result = parse_result(new_result)
+        print(i, new_result)
+        # stopping condition
+        if new_result < previous_result and i > 20:
+            break
+    for x, y in data_generator:
+        next_word_model.train_on_batch(x, y)
+0 1644.6
+
+3 148.7
+
+6 274.8
+
+9 72.3
+
+12 186.8
+
+15 183.7
+
+18 415.8
+
+21 138.9
+3.2 Language Model on token index
+def model_builder(data_generator):
+    complexity = 200
+    inp = Input(shape=(data_generator.max_len, data_generator.embedding_size))
+    X = inp
+    X = LSTM(complexity, return_sequences=True)(X)
+    X = LSTM(complexity)(X)
+    X = Dense(complexity, activation='linear', name='embedding_output')(X)
+    X = Dense(complexity, activation='elu')(X)
+    X = Dense(len(data_generator.token2index), activation='softmax')(X)
+    model = Model(inputs=inp, outputs=X)
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])
+    model.summary()
+    embedder = Model(inputs=inp, outputs=model.get_layer('embedding_output').output)
+    return model, embedder  
+data_generator = IndexesDataGenerator()
+next_word_model, embedder = model_builder(data_generator)
+get_similarity_values = similarity_values_wrapper(embedder.predict, data_generator.vectorize)
+new_result = -10e5
+for i in tqdm(range(1000)):
+    if i%3==0:
+        previous_result = new_result
+        new_result = evaluate(get_similarity_values, 'Language Model on token index')
+        new_result = parse_result(new_result)
+        print(i, new_result)
+        if new_result < previous_result and i > 20:
+            break
+    for x_e, x_i, y in data_generator:
+        next_word_model.train_on_batch(x_e, y)
+0 1700.6
+
+3 404.7
+
+6 255.3
+
+9 379.8
+
+12 195.2
+
+15 160.1
+
+18 530.7
+
+21 701.9
+
+24 536.9
+plot_results()
+
+Конец первой части
+
+ссылка на Часть2
+    Tags: PythonNLPNatural Languge ProcessingEmbeddings Hubs: PythonData MiningNatural Language Processing          
+
+

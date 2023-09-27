@@ -1,0 +1,188 @@
+
+
+PromptGPT: оптимизируем промт для GPT-4 / Habr
+
+
+               PromptGPT: оптимизируем промт для GPT-4 Level of difficulty  
+    Medium
+   Reading time  
+    14 min
+   Views  8.8K Python *Data visualization *Machine learning *Artificial Intelligence Natural Language Processing * 
+    Tutorial
+        Допустим, нам нужно решить задачу NLP, в которой мы принимаем и возвращаем текст (seq2seq). Существует великое множество таких задач: генерация текста/кода, перевод/стилизация, суммаризация, коррекция текста, распознавание именованных сущностей, даже классификацию текста можно свести к seq2seq.Если нам нужно очень быстро написать высококачественное решение и у нас есть возможность платить за API, тогда нам подойдет использование GPT-4 API.При решении seq2seq-задачи с использованием GPT-4 API нам нужно будет составить промт, который состоит из системного сообщения и набора примеров для модели (few-shot learning). Туториал по GPT-4 API можно найти в моей предыдущей статье.Далее возникает задача измерения качества модели и оптимизации промта:Непонятно, как изменение системного сообщения влияет на результатНеясно, как подбирать примерыЧем длиннее промт, тем дороже использование модели. Хочется найти минимальную длину промта, при которой качество нас устраивает Вдобавок, можно использовать либо GPT-3.5, либо GPT-4 (если у вас есть к ней доступ). GPT-4 гораздо дороже. Хочется понять, даст ли GPT-4 достаточный буст к качеству, который оправдает ее цену.Я написал небольшой тул, который измеряет качество модели на различных промтах и позволяет выбрать оптимальный: https://github.com/einhornus/prompt_gpt. В этой статье я сначала расскажу, как он работает, а потом покажу процесс оптимизации промта на конкретном примере - на задаче коррекции грамматики из своей предыдущей статьи.Решение задач NLP с помощью GPT-4 APIВ API есть метод ChatCompletion, который принимает список сообщений, который мы будем называть промтом, и возвращает следующее сообщение.Каждое сообщение этого списка представляет собой словарь с двумя полями: role и content.По значению role сообщения классифицируются на 3 типа: системные сообщения (role="system"), сообщения пользователя (role="user") и сообщения ассистента (role="assistant").Системное сообщение содержит в своем поле content высокоуровневые инструкции для ассистента - то, как он должен себя вести. В системном сообщении мы пытаемся объяснить модели, что мы от нее хотим.Если в промте несколько системных сообщений, иметь значение будет только последнее из них (новые системные сообщения переписывают старые).Сообщения от пользователя и ассистента образуют предшествующий диалог между ними. Однако, эти сообщения могут быть использованы также для демонстрации примеров решения задач (метод обучения на основе небольшого количества примеров - few shot learning). В каждом сообщении пользователя содержится пример ввода данных, а в ответном сообщении ассистента - ожидаемый результат. После этих примеров идет сообщение от пользователя с данными, для которых требуется найти решение.Например, промт для перевода с английского на русский может выглядеть следующим образом:[
+    {
+        "role": "user",
+        "content": "Hello how are you?"
+    },
+    {
+        "role": "assistant",
+        "content": "Привет, как дела?"
+    },
+    {
+        "role": "user",
+        "content": "Despite the heavy rain, they decided to continue their hike through the dense forest"
+    },
+    {
+        "role": "assistant",
+        "content": "Несмотря на сильный дождь, они решили продолжить свой поход через густой лес"
+    },
+    {
+        "role": "user",
+        "content": "The chef, inspired by flavors from around the world, has created a unique fusion cuisine that attracts food enthusiasts and critics alike"
+    },
+    {
+        "role": "assistant",
+        "content": "Повар, вдохновленный вкусами со всего мира, создал уникальную фьюжн-кухню, которая привлекает как гурманов, так и критиков"
+    },
+    {
+        "role": "system",
+        "content": "You are TranslateGPT. You translate user messages from English to Russian. You are the most accurate English to Russian translator in the world."
+    },
+    {
+        "role": "user",
+        "content": "{текст, который надо перевести}"
+    }
+]
+На практике выяснилось, что системное сообщение лучше добавлять в конец, перед последним сообщением от юзера. В этом случае модель уделяет системному сообщения наибольшее внимание.По этой же причине, более хорошие примеры тоже желательно ставить в конец. Если послать API-запрос с таким промтом, в ответ мы получим сообщение ассистента, которое будет содержать перевод нашего текста.Таким образом, следующий код переводит текст с английского на русский:import openai
+import os
+def translate(text):
+    openai.api_key = os.environ.get("OPENAI_API_KEY")
+    completion = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {
+                "role": "user",
+                "content": "Hello how are you?"
+            },
+            {
+                "role": "assistant",
+                "content": "Привет, как дела?"
+            },
+            {
+                "role": "user",
+                "content": "Despite the heavy rain, they decided to continue their hike through the dense forest"
+            },
+            {
+                "role": "assistant",
+                "content": "Несмотря на сильный дождь, они решили продолжить свой поход через густой лес"
+            },
+            {
+                "role": "user",
+                "content": "The chef, inspired by flavors from around the world, has created a unique fusion cuisine that attracts food enthusiasts and critics alike"
+            },
+            {
+                "role": "assistant",
+                "content": "Повар, вдохновленный вкусами со всего мира, создал уникальную фьюжн-кухню, которая привлекает как гурманов, так и критиков"
+            },
+            {
+                "role": "system",
+                "content": "You are TranslateGPT. You translate user messages from English to Russian. You are the most accurate English to Russian translator in the world."
+            },
+            {
+                "role": "user",
+                "content": text
+            }
+        ],
+        temperature=0
+    )
+    return completion["choices"][0]["message"]["content"]Полную справку по параметрам в API можно посмотреть здесь. Поиграться с API можно в плейграунде.Принцип работыУ нас есть две выборки данных: обучающая и тестовая. Каждый элемент обеих выборок содержит два поля: input и output.Из элементов обучающей выборки мы формируем примеры для промта.Чтобы измерить качество модели на конкретном промте, мы запускаем модель на каждом элементе тестовой выборки, и находим метрику сходства между выводом модели и полем output. Анализируя распределение этой метрики (ее среднее, медиану и другие статистические параметры), мы можем выбрать оптимальный промт.Для экономии денег и времени мы кешируем результаты вызовов модели.Нам нужно варьировать системное сообщение: у нас в отдельной папке лежит набор возможных системных сообщений (каждое в своем файле), и мы можем запустить модель с любым из них.Формирование списка примеров происходит следующим образом: мы задаемся значением параметра k (максимальное суммарное количество символов в наборе примеров), и идем от начала обучающей выборки до ее конца: если текущий элемент возможно поместить в набор примеров, то добавляем его; иначе пропускаем. По завершении процедуры список примеров переворачивается, чтобы более хорошие примеры были расположены ближе к концу.Эффективность набора примеров часто зависит от того, в каком порядке элементы обучающей выборки были расставлены изначально (причем эта эффективность очень непредсказуема). Поэтому я решил переставлять элементы обучающей выборки n раз: в первый раз они расставлены в дефолтном порядке, а следующие n-1 раз они переставляются в случайном порядке (причем seed равен номеру итерации). Таким образом, возможно позапускать модель много раз при самых разных наборах примеров и таким образом найти оптимальный набор.Создание отчетовУ нас есть функция create_report, которая составляет .json-отчет о качестве модели. Она принимает следующие аргументы:project_name - название проектаmodel - gpt-3.5-turbo или gpt-4system_message_file - имя файла, в котором находится системное сообщениеparameters - о его смысле я расскажу чуть позжеk - максимальное суммарное количество символов в наборе примеровn - количество наборов примеров (примеры рандомизируются каждый раз по-разному)metric - используемая метрика сходства между ожидаемым и реальным результатом. На данный момент поддерживается только метрика BLEU. Эта метрика - золотой стандарт при оценке качества машинного перевода. Есть планы в будущем добавить расстояние Левенштейна и косинусное сходство между различными эмбеддингами текста.Функция генерирует отчет в формате .json, в названии которого закодированы эти параметры, например: "system=1 language=English  model=gpt-3.5-turbo k=0 metric=bleu.json".В отчете содержатся результаты для самого лучшего из n запусков - того, где среднее значение метрики было самым высоким.Содержимое отчета:Параметры вызова функции create_reportСреднее, медиана, перцентили и стандартное отклонение значений метрикиЭлементы тестовой выборки, сортированные по значению метрики (от лучших результатов к худшим); значение метрики также прилагаетсяПромт в виде списка сообщенийhistory - среднее значение метрики на каждом из n запусковПример отчета можно посмотреть здесь.ПараметрыДля каждого элемента обучающей/тестовой выборки также хранится набор их "параметров". Комбинации значений параметров делят выборки на независимые подвыборки; все отчеты формируются на подвыборках с одинаковым значением всех параметров.Например, если нам нужно реализовать машинный перевод, тогда параметрами будут служить исходный и конечный языки, потому что для каждой языковой пары нам нужно брать отдельные наборы примеров. Каждый отчет будет относиться к конкретной языковой паре, задаваемой значениями двух параметров.При записи системного сообщения параметры можно обобщенно указывать значения параметров, например: "You translate messages from {source_language} to {destination_language}".ВизуализацияФункция visualize визуализирует несколько отчетов в виде набора ящиков с усами.Пример визуализацииЯщики строятся с помощью boxplot из matplotlib, поэтому границы ящика представляют собой 25-й и 75-й перцентили, жирная линия в центре - медиана. Треугольный вырез в центре ящика называется "notch" и он показывает доверительный интервал для медианы.Функция visualize принимает следующие аргументы:project - название проектаsystem_message_files - массив возможных значений system_message_filemodels - массив возможных значений modelparameters_configurations - массив возможных значений parametersks - массив возможных значений kmetric - используемая метрикаФункция фильтрует отчеты: она визуализирует только те отчеты, все параметры которых попадают в соответствующие массивы.При визуализации в заголовке графика указаны значения параметров, которые одинаковы для всех визуализированных отчетов. Под каждым из ящиков записаны значения параметров, которые отличаются между отчетами.Структура проектаВ корне data нужно создать папку с именем своего проекта, в ней будут храниться данные, относящиеся к этому проекту. Кроме того, в data есть БД llm_cache, с помощью которой кешируются запросы к LLM, а также пустой шаблон dataset - предполагается его наполнить своими данными и положить в корень своего проекта.В system лежат файлы, в которых прописываются различные вариации системного сообщения. Название сообщения - имя файла без .txt.В reports находятся сгенерированные отчеты.dataset.sqlite3 - база данных SQLite, у которой есть 2 таблицы: train и test. В train находятся элементы обучающей выборки, а в test - тестовой.У обеих таблиц одинаковая схема:CREATE TABLE "train" (
+	"id"	INTEGER NOT NULL UNIQUE,
+	"name"	TEXT,
+	"parameters"	TEXT,
+	"input"	TEXT,
+	"output"	TEXT,
+	PRIMARY KEY("id" AUTOINCREMENT)
+)Фрагмент БДid - первичный ключ. На первой итерации при генерации примеров элементы обучающей выборки располагаются по возрастанию id. Поэтому имеет смысл помещать самые лучшие примеры в начало выборки (однако при n>1 на следующих итерациях элементы рандомно перемешиваются и их исходный порядок не имеет значения)name - название элемента выборки. Логически оно ни на что не влияетparameters - значения параметров, разделенные переносом строкиinput - исходное сообщение, входные данные моделиoutput - ожидаемый результат работы моделиВ src находится код:create_reports.py - скрипт для создания отчетов, содержит функцию create_reportvisualize.py - скрипт для визуализации, содержит функцию visualizellm_utils.py - тут находится код для работы с GPT API и кешированияmetrics.py - код для расчета метрик сходстваЗависимости проекта: openai - для запросов к LLMnltk - для токенизации и расчета BLEUmatplotlib - для визуализацииnumpy - для статистикиИсправление грамматикиAPI-ключСначала нужно сгенерировать API-ключ на этой странице и поместить его в переменную окружения OPENAI_API_KEY.Составляем датасетРаньше существовал сайт Lang8, на котором носители языка исправляли ошибки в текстах изучающих. Сейчас он уже не работает, но данные, собранные за многие годы, можно скачать.С обработкой этих данных пришлось повозиться, но в итоге у меня получился очень качественный датасет для решения моей задачи: для каждого из 6 языков (английский, русский, испанский, немецкий, французский, голландский) у меня есть от 30 до 90 примеров в тестовой выборке и вдвое меньше - в обучающей.В данном проекте у нас будет один параметр - language. Большинство измерений мы будем проводить на английском подмножестве нашего датасета {language=English} (если тесты проводить на всех языках, то они займут уж слишком много времени).Для каждого языка в данных Lang8 доступны тексты от носителей самых разных языков (но подавляющее большинство - от носителей японского, китайского и корейского). Поэтому при составлении датасета я решил сбалансировать родные языки авторов. Например, в английской части датасета есть по 15 текстов от носителей английского, русского, испанского, французского, немецкого, японского, китайского и корейского, плюс 15 текстов от носителей других языков. Поле name (которое логически ни на что не влияет) содержит язык текста и родной язык автора текста.Подбираем системное сообщениеСначала подберем оптимальное системное сообщение.Составим 6 системных сообщений и положим их в папку correct_grammar/system: 1.txt, 2.txt, ..., 6.txt.Первое и второе сообщения - это то, что я использовал в своей предыдущей статье для двух разных типов коррекции:1.txt:You're ImproveGPT.You improve the provided {language} text language-wise: you fix grammar and spelling mistakes and make it sound more natural.Your reply should contain ONLY the corrected text, nothing else.Please use exactly the same formatting as the original text.2.txt:You're CorrectGPT.You fix grammar and spelling mistakes in {language} texts.Please only fix grammar and spelling mistakes in the given user message.Your reply should contain ONLY the corrected text, nothing else.Please use exactly the same formatting as the original text.Далее, в текстах 3 и 4 я решил добавить фразу "You're the best proofreading tool in the world."3.txt:You're ImproveGPT.You're the best proofreading tool in the world.You improve the provided {language} text language-wise: you fix grammar and spelling mistakes and make it sound more natural.Your reply should contain ONLY the corrected text, nothing else.Please use exactly the same formatting as the original text.4.txt:You're CorrectGPT.You're the best proofreading tool in the world.You fix grammar and spelling mistakes in {language} texts.Please only fix grammar and spelling mistakes in the given user message.Your reply should contain ONLY the corrected text, nothing else.Please use exactly the same formatting as the original text.В пятом сообщении я использовал второе сообщение в качестве основы и просто расписал его более подробно, добавив элементы из первого сообщения:5.txt:You're CorrectGPT.You fix grammar and spelling mistakes in {language} texts.You're the best proofreader in the world. You can fix any grammar and spelling mistakes in any text.The user supplies a text in {language} and you have to write a reply with the same text but with all grammar and spelling mistakes fixed.You're allowed to make slight changes to the text so it sounds more natural, but it should still have the same meaning as the original.Your reply should contain ONLY the corrected text, nothing else.Please use exactly the same formatting as the original text.В шестом варианте сообщения я, наоборот, сформулировал инструкцию максимально лаконично.6.txt:You fix grammar and spelling mistakes in {language} texts.Составим отчет для каждого промта (при n=10 и двух значениях k - 0 (нет примеров) и 2000).Для этого запустим следующий код из файла create_reports.pyfor i in range(1, 7):
+    create_report("grammar_correction", "gpt-3.5-turbo", str(i), {"language": "English"}, 2000, "bleu", 10)
+    create_report("grammar_correction", "gpt-3.5-turbo", str(i), {"language": "English"}, 0, "bleu", 10)Внимание: составление ответов - дело небыстрое. Нам нужно для каждого из 6-ти системных сообщений 11 раз пройтись GPT-3.5 по 90 элементам тестовой выборки. Это заняло всю ночь и скушало несколько долларов за использование API.Визуализируем результаты отдельно при k=0 и при k=2000 с помощью кода в visualize.py:visualize("grammar_correction",
+              ["1", "2", "3", "4", "5", "6"],
+              ["gpt-3.5-turbo"],
+              [
+                  {"language": "English"},
+              ],
+              [0],
+              "bleu"
+)
+visualize("grammar_correction",
+              ["1", "2", "3", "4", "5", "6"],
+              ["gpt-3.5-turbo"],
+              [
+                  {"language": "English"},
+              ],
+              [2000],
+              "bleu"
+)При k=2000 все промты (за исключением последнего) показывают примерно одинаковые результаты, однако при k=0 разница видна очень явно.Из этого можно сделать вывод что в нашей задаче при отсутствии примеров критически важно правильно составить системное сообщение, а при их наличии это не так принципиально - модель по примерам сообразит, чего от нее хотят.В итоге я выбрал сообщение номер 4 - у него самые лучшие результаты при k=0, а при k=2000 у него наименьшее стандартное отклонение метрики.Зависимость BLEU от количества примеровТеперь будем менять k (без изменения прочих параметров)create_report("grammar_correction", "gpt-3.5-turbo", "4", {"language": "English"}, 500, "bleu", 10)
+create_report("grammar_correction", "gpt-3.5-turbo", "4", {"language": "English"}, 1000, "bleu", 10)
+create_report("grammar_correction", "gpt-3.5-turbo", "4", {"language": "English"}, 2000, "bleu", 10)visualize("grammar_correction",
+              ["4"],
+              ["gpt-3.5-turbo"],
+              [
+                  {"language": "English"},
+              ],
+              [0, 500, 1000, 2000],
+              "bleu"
+)Качество модели практически не меняется при увеличении количества примеров (но немного все-таки улучшается).GPT-3.5 vs GPT-4Cгенерируем отчет по GPT-4:create_report("grammar_correction", "gpt-4", "4", {"language": "English"}, 0, "bleu", 10)Визуализируем 3 ситуации: GPT-3.5 при k=0 и k=2000, и GPT-4 при k=0visualize("grammar_correction",
+              ["4"],
+              ["gpt-3.5-turbo", "gpt-4"],
+              [
+                  {"language": "English"},
+              ],
+              [0, 2000],
+              "bleu"
+)Видно, что gpt-4 намного круче: gpt-4 без примеров бьет gpt-3.5 с примерами на 2000 символов.Другие языкиТеперь посмотрим результаты на других языках.create_report("grammar_correction", "gpt-3.5-turbo", "4", {"language": "Russian"}, 0, "bleu", 10)
+create_report("grammar_correction", "gpt-3.5-turbo", "4", {"language": "Spanish"}, 0, "bleu", 10)
+create_report("grammar_correction", "gpt-3.5-turbo", "4", {"language": "French"}, 0, "bleu", 10)
+create_report("grammar_correction", "gpt-3.5-turbo", "4", {"language": "German"}, 0, "bleu", 10)
+create_report("grammar_correction", "gpt-3.5-turbo", "4", {"language": "Dutch"}, 0, "bleu", 10)visualize("grammar_correction",
+              ["4"],
+              ["gpt-3.5-turbo"],
+              [
+                  {"language": "English"},
+                  {"language": "German"},
+                  {"language": "French"},
+                  {"language": "Spanish"},
+                  {"language": "Dutch"},
+                  {"language": "Russian"},
+              ],
+              [0],
+              "bleu"
+)На русском GPT работает хуже всего - вероятно, из-за кривой токенизации.РезультатыОптимально использовать следующее системное сообщение:You're CorrectGPT.You're the best proofreading tool in the world.You fix grammar and spelling mistakes in {language} texts.Please only fix grammar and spelling mistakes in the given user message.Your reply should contain ONLY the corrected text, nothing else.Please use exactly the same formatting as the original text. Если у нас есть доступ к GPT-4, то наилучшее качество будет достигаться с ее помощью (можно даже не использовать примеры).При использовании GPT-3.5 у нас будет небольшой выигрыш в качестве, если мы будем использовать примеры. Оптимальный промт в таком случае мы возьмем из соответствующего файла вида "system=4 language=English  model=gpt-3.5-turbo k=<500, 1000, или 2000> metric=bleu.json". Например, при k=2000 оптимальный промт выглядит следующим образом:Оптимальный промт[
+        {
+            "role": "user",
+            "content": "Please check my English questions\nPlease tell your shy story."
+        },
+        {
+            "role": "assistant",
+            "content": "Please check my English questions.\nPlease tell your shy story."
+        },
+        {
+            "role": "user",
+            "content": "I was disappointed.\nToday I went to a Japanese school where I am working as a volunteer every Sunday.\nI met there a Australian yong man who is studing Japanese.\nI asked him to tolk with me in English for a while.\nBut I could not understand well what he said.\nI was nervous with speaking English.\nI was frustrated it was useless my English study until now."
+        },
+        {
+            "role": "assistant",
+            "content": "I was disappointed.\nToday, I went to a Japanese school where I am working as a volunteer every Sunday.\nI met a young Australian man who is studying Japanese.\nI asked him to talk to me in English for a while.\nBut I could not understand what he said.\nI was nervous to speak English.\nI was frustrated; my English study until now was useless."
+        },
+        {
+            "role": "user",
+            "content": "Business\nYesterday i've seen an old friend, we had a small talk about the daily important things.\nThan I wanted to ask how long he has his business, but I don't know the right words,\nIs \"how long have you your business\" or \" how long have you been in that business\"\nThat drives me crazy..."
+        },
+        {
+            "role": "assistant",
+            "content": "Business\nYesterday, I saw an old friend. We had small talk about some daily important things.\nThen, I wanted to ask him for how long he has had his business, but I didn't know the right words.\nIs it \"for how long have you had your business\" or \"for how long have you been in the business\"?\nIt's driving me crazy..."
+        },
+        {
+            "role": "user",
+            "content": "Whenever I have a chance, I will try to write my diary.\nIt plans to write two times a day.\nIt's time at noon and I have a sleep before.\nThat is not a promise and It is a plan!\nI know that promises is important.\nSo, I don't promises easily."
+        },
+        {
+            "role": "assistant",
+            "content": "Whenever I get the chance, I will try to write in my diary.\nI plan to write two times a day.\nI will write at noon and before I sleep.\nThat is not a promise, it is a plan!\nI know that promises are important.\nSo I don't make promises easily."
+        },
+        {
+            "role": "system",
+            "content": "You're CorrectGPT.\nYou're the best proofreading tool in the world.\nYou fix grammar and spelling mistakes in English texts.\nPlease only fix grammar and spelling mistakes in the given user message.\nYour reply should contain ONLY the corrected text, nothing else.\nPlease use exactly the same formatting as the original text."
+        }
+]Модель будет работать со сравнимым уровнем качества на испанских, французских, немецких и голландских текстах. При работе на русском языке качество результатов будет значительно хуже.      Tags: gpt-4artificial intelligencenlpgrammar checkingaimllanguage modelpythondata visualizationdata analysis  Hubs: PythonData visualizationMachine learningArtificial IntelligenceNatural Language Processing          
+
+

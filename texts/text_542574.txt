@@ -1,0 +1,91 @@
+
+
+Искусственные нейронные сети. Часть 3 / Habr
+
+
+               16  February  2021 at 23:25  Искусственные нейронные сети. Часть 3 Python *Artificial Intelligence       Обучение нейронной сетиВ данной части статьи по разработке простейшей нейронной сети мы научимся обучать нейронные сети.Мы обучим нейросеть решать задачу по нахождении закономерности в ряде чисел. Для простоты это будут числа 0 и 1.Для обучения нейронной сети надо иметь условия задач и решения, задачи должны решать одну проблему.Данные для обучения выглядят такУсловиеОтвет101000010Данную задачу вы можете увидеть почти во всех статьях по написанию нейронных сетей с нуля.В результате обучения нейронная сеть находит логическую связь между условием и ответом.Решение этой задачи это первое введённое число.В качестве условия задачи которую должна решить нейронная сеть выглядит такУсловиеОтвет111Обучение нейронной сети это уменьшение потерь.Чем меньше потерь тем лучше и правильнее результат.Во избежания сложных формул я не буду подробно объяснять принципы обучения, я дам вам код который более-менее понятен и объясню функции необходимые для обучения нейронной сети.Для обучения нам понадобится производная сигмоиды.Что такое производная вы сможете посмотреть в википедии, а производная сигмоиды выглядит так:Реализация на Python выглядит так:def deriv_sig(x):
+    return sig(x) * (1 - sig(x))Запишем этот код в файл Math.pyТак же для обучения нам нужно 2 константы:rate - скорость обученияcount_learn - количество повторений обученияЧем больше count_learn тем лучше обучится нейронная сеть, но потребуется больше времени на обучение. А с rate все понятно.Присвоим константам значения:rate = 0.1count_learn = 10000После  объявления констант, запускаем цикл от 0 до count_learn, внутри цикла запустим еще один цикл который будет выполняться столько раз, сколько входных данных для обучения у нас есть. После этого будет сложная математика, поэтому дам вам просто код:def learn(self, inputs, answers):
+        
+        rate = 0.1
+        count_learn = 10000
+        for o in range(count_learn):
+            for inputt, answer in zip(inputs, answers):
+                sum_n1 = self.n[0].w[0] * inputt[0] + self.n[0].w[1] * inputt[1] + self.n[0].b
+                n1 = sig(sum_n1)
+                sum_n2 = self.n[1].w[0] * inputt[0] + self.n[1].w[1] * inputt[1] + self.n[1].b
+                n2 = sig(sum_n2)
+                sum_n3 = self.n[2].w[0] * n1 + self.n[2].w[1] * n2 + self.n[2].b
+                n3 = sig(sum_n3)
+                out_res = n3
+                err = -2 * (answer - out_res)
+                err_rate = rate * err
+                deriv_sig_n1 = deriv_sig(sum_n1)
+                deriv_sig_n2 = deriv_sig(sum_n2)
+                deriv_sig_n3 = deriv_sig(sum_n3)
+                self.n[0].w[0] -= err_rate * self.n[2].w[0] * deriv_sig_n3 * inputt[0] * deriv_sig_n1
+                self.n[0].w[1] -= err_rate * self.n[2].w[0] * deriv_sig_n3 * inputt[1] * deriv_sig_n1
+                self.n[0].b -= err_rate * self.n[2].w[0] * deriv_sig_n3 * deriv_sig_n1
+                self.n[1].w[0] -= err_rate * self.n[2].w[1] * deriv_sig_n3 * inputt[0] * deriv_sig_n2
+                self.n[1].w[1] -= err_rate * self.n[2].w[1] * deriv_sig_n3 * inputt[1] * deriv_sig_n2
+                self.n[1].b -= err_rate * self.n[2].w[1] * deriv_sig_n3 * deriv_sig_n2
+                self.n[2].w[0] -= err_rate * n1 * deriv_sig_n3
+                self.n[2].w[1] -= err_rate * n2 * deriv_sig_n3
+                self.n[2].b -= err_rate * deriv_sig_n3Запишем эту функцию в класс NeuronNet.В итоге файл NeuronNet.py выглядит так:from Neuron import *
+class NeuronNet:
+    def __init__(self):
+        self.n = []
+        for i in range(3):
+            self.n.append(Neuron(2))
+    def activate(self, inputs):
+        return self.n[2].activate(np.array([self.n[0].activate(inputs), self.n[1].activate(inputs)]))
+    def learn(self, inputs, answers):
+        
+        rate = 0.1
+        count_learn = 10000
+        for o in range(count_learn):
+            for inputt, answer in zip(inputs, answers):
+                sum_n1 = self.n[0].w[0] * inputt[0] + self.n[0].w[1] * inputt[1] + self.n[0].b
+                n1 = sig(sum_n1)
+                sum_n2 = self.n[1].w[0] * inputt[0] + self.n[1].w[1] * inputt[1] + self.n[1].b
+                n2 = sig(sum_n2)
+                sum_n3 = self.n[2].w[0] * n1 + self.n[2].w[1] * n2 + self.n[2].b
+                n3 = sig(sum_n3)
+                out_res = n3
+                err = -2 * (answer - out_res)
+                err_rate = rate * err
+                deriv_sig_n1 = deriv_sig(sum_n1)
+                deriv_sig_n2 = deriv_sig(sum_n2)
+                deriv_sig_n3 = deriv_sig(sum_n3)
+                self.n[0].w[0] -= err_rate * self.n[2].w[0] * deriv_sig_n3 * inputt[0] * deriv_sig_n1
+                self.n[0].w[1] -= err_rate * self.n[2].w[0] * deriv_sig_n3 * inputt[1] * deriv_sig_n1
+                self.n[0].b -= err_rate * self.n[2].w[0] * deriv_sig_n3 * deriv_sig_n1
+                self.n[1].w[0] -= err_rate * self.n[2].w[1] * deriv_sig_n3 * inputt[0] * deriv_sig_n2
+                self.n[1].w[1] -= err_rate * self.n[2].w[1] * deriv_sig_n3 * inputt[1] * deriv_sig_n2
+                self.n[1].b -= err_rate * self.n[2].w[1] * deriv_sig_n3 * deriv_sig_n2
+                self.n[2].w[0] -= err_rate * n1 * deriv_sig_n3
+                self.n[2].w[1] -= err_rate * n2 * deriv_sig_n3
+                self.n[2].b -= err_rate * deriv_sig_n3
+А Math.py выглядит так:import numpy as np
+def sig(x):
+    return 1 / (1 + np.exp(-x)) 
+def deriv_sig(x):
+    return sig(x) * (1 - sig(x))
+    Теперь запустим нашу нейронную сеть и обучение.Допишем в файл main.py массив с данными для обучения и правильными ответами:learn_inputs = np.array([[1, 0], [0, 0], [0, 1]])
+learn_answers = np.array([1, 0, 0])Далее запустим обучение:net.learn(learn_inputs, learn_answers)И запустим нашу нейронную сеть подав ей задачу которую надо решить:x = np.array([1, 1])
+if (net.activate(x) < 0.5):
+    print("0")
+else:
+    print("1")В итоге main.py выглядит так:import numpy as np
+from NeuronNet import *
+net = NeuronNet()
+learn_inputs = np.array([[1, 0], [0, 0], [0, 1]])
+learn_answers = np.array([1, 0, 0])
+net.learn(learn_inputs, learn_answers)
+x = np.array([1, 1])
+if (net.activate(x) < 0.5):
+    print("0")
+else:
+    print("1")
+Теперь запустим программу введя в консоль:python main.pyпосле запуска нейронная сеть выводитТеперь обновим входные данные, вместоУсловиеОтвет111Зададим другую задачуУсловиеОтвет010При изменении входных данных результат программы выглядит такТеперь подведем итоги.В серии статей по искусственным нейронным сетям мы изучилиПринципы работы искусственных нейроновПринципы работы нейронных сетейПринципы обучения нейронных сетейНаписали свою нейронную сетьЭта часть статьи была последней.Итоговый код нейронной сети вы сможете найти на моей странице в github.Если вы хотите изучить математические формулы для обучения нейронных сетей, прочитайте данную статью.    Tags: machine learningииaiискусственный интеллектнейросетьнейронная сетьнейронные сетинейросетимашинное обучениенейронная сеть с нуля Hubs: PythonArtificial Intelligence          
+
+

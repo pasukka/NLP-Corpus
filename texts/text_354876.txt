@@ -1,0 +1,306 @@
+
+
+Swift для дата-сайентиста: быстрое погружение за 2 часа / Habr
+
+
+               10  May  2018 at 11:34  Swift для дата-сайентиста: быстрое погружение за 2 часа Python *Data Mining *Swift *Machine learning *      
+Google объявил, что TensorFlow переезжает на Swift. Так что отложите все свои дела, выбросьте Python и срочно учите Swift. А язык, надо сказать, местами довольно странный.
+
+Для затравки посмотрите небольшую презентацию с объяснением, почему Swift и как с этим связан TensorFlow:
+
+Разработчики TensorFlow, конечно, пока не забывают Python, но основой фреймворка станет именно Swift. Хотя в нем можно будет писать python-подобный код. Но исполняться он все равно будет интерпретатором Python, а это снова значит медленно, непараллельно, неэффективно по памяти, без контроля типов и все прочее.
+Поэтому учим Swift с нуля. Ну, не совсем с нуля: предполагается, что вы уже хорошо программируете на Python'е, и поэтому многие конструкции Swift далее будут описаны в сравнении с аналогичными Python'овскими конструкциями.
+
+Статья ни в коем случае не претендует на подробное описание языка. Это лишь первое весьма поверхностное знакомство с основными возможностями языка для тех, кто знает Python.
+Общие слова
+Swift — довольно новый язык. Это хорошо, потому что он основан на обширной базе более ранних языков. Но в то же время и очень плохо, потому что он пока еще не лишен совсем “детских болезней”. Поэтому язык очень быстро эволюционирует.
+
+Несмотря на то, что в интернете полно статей и туториалов по Swift — все они уже устарели. Многочисленные рецепты со StackOverflow вам скорее всего тоже не подойдут, потому что они относятся к предыдущим версиям языка.
+Хронология последних событий: в марте 2016 года вышел Swift 2.2, а в сентябре — уже “сильно другой” Swift 3, через год — “снова другой” Swift 4. Текущая версия 4.1, хотя Swift for Tensorflow — это уже 4.2-dev. До конца года выйдет Swift 5, в котором будет еще больше нововведений даже в самом языке, не говоря уже о библиотеках.
+В общем, TLDR: язык пока не готов к серьезной разработке для data science. Поэтому я позволил себе потратить лишь два часа на ознакомление с языком в его текущем виде, чтобы через полгода легче было погружаться в Swift 5 с уже новой версией TensorFlow.
+Переменные и константы
+Все переменные строго типизированы, поэтому при объявлении придется указывать тип данных. К счастью, компилятор умеет определять тип по начальному значению.
+let intConst = 5
+let strConst = "strings should be in double quotes"
+var nonInitVar: Int   // для переменной без начального значения тип указывается явно
+var intVar = 10
+var floatVar = 10.0
+var doubleVar: Double = 10.5
+var strVar = "double quotes only"
+Как вы уже догадались, константы объявляются с помощью let, а переменные через var. В качестве хорошего тона и для оптимизации вычислений для всех значений, которые не будут в процессе исполнения программы меняться, рекомендуется именно let. В остальном, все просто и понятно.
+Диапазон
+В Python'е есть slice, а в Swift'е целая пачка типов Range: открытый, закрытый, неполный снизу и т.д.
+
+Литералами они задаются довольно кратко (но можно было бы и еще короче):
+1...5     // от 1 до 5 включительно
+1..<5    // не включая 5
+...5       // от начала до 5
+2…      // от 2 до конца
+Для задания диапазонов с шагом, отличающимся от единицы, или с нецелыми числами можно использовать функцию stride:
+for i in stride(from: 0.1, to: 0.5, by: 0.1) {
+    print(i)
+}
+или
+for i in stride(from: 0.1, through: 0.5, by: 0.1) {
+    print(i)
+}
+Догадаться невозможно, нужно просто знать, что в первом случае (с to) диапазон открыт справа (т.е. 0.5 не включается).
+Строки
+В каждом языке есть своя чудовищная глупость. Разработчики Swift'а решили, что у них это будут строки. Во-первых, есть два строковых типа String и Substring. Они очень похожи, но отличаются лишь тем, что у Substring нет своей области памяти, и она всегда указывает на кусок памяти какой-то String. Идея понятная и правильная, но все эти нюансы можно было легко скрыть в реализации String.
+Дальше хуже. Как получить Substring из String? Вы думаете, тут есть что-нибудь как в Python'е — str[1:10]. Ничего подобного! Нельзя индексировать строки целыми числами. А как надо?
+str[str.index(str.startIndex, offsetBy: 1) ..< str.index(str.startIndex, offsetBy: 10)]
+Я не шучу. Это официальный способ работы со строками. У каждой дурацкой идеи есть длинное и бессмысленное объяснение. Этот случай не стал исключением.
+Обратите еще раз внимание на строку str[str.index(str.startIndex, offsetBy: 1) ..< str.index(str.startIndex, offsetBy: 10)]. В ней инвариантно все, кроме двух целых чисел. Иными словами, из 87 символов 84 лишние!
+Чтобы было по-людски, пишем extension для стандартного типа String:
+extension String {
+    public subscript(i: Int) -> Character {
+        return self[index(startIndex, offsetBy: i)]
+    }
+    public subscript(r: Range<Int>) -> Substring {
+        var a = Array(r)
+        let start = index(startIndex, offsetBy: a[0])
+        let end = index(startIndex, offsetBy: a[-1])
+        return s[start...end]
+    }
+}
+Запускаем… Не работает! Компилятор ругается:
+error: 'subscript' is unavailable: cannot subscript String with an integer range, see the documentation comment for discussion
+Дело в том, что в Swift есть явный хардкод, запрещающий создавать метод subscript, который принимает диапазон из целых чисел.
+Ладно, пойдем другим путем, в 10 раз длиннее, видимо таков уж Swift-way:
+extension String {
+  public subscript(i: Int) -> Character {
+    return self[index(startIndex, offsetBy: i)]
+  }
+  public subscript(bounds: Range<Int>) -> Substring {
+    let start = index(startIndex, offsetBy: bounds.lowerBound)
+    let end = index(startIndex, offsetBy: bounds.upperBound)
+    return self[start ..< end]
+  }
+  public subscript(bounds: ClosedRange<Int>) -> Substring {
+    let start = index(startIndex, offsetBy: bounds.lowerBound)
+    let end = index(startIndex, offsetBy: bounds.upperBound)
+    return self[start ... end]
+  }
+  public subscript(bounds: PartialRangeFrom<Int>) -> Substring {
+    let start = index(startIndex, offsetBy: bounds.lowerBound)
+    let end = index(endIndex, offsetBy: -1)
+    return self[start ... end]
+  }
+  public subscript(bounds: PartialRangeThrough<Int>) -> Substring {
+    let end = index(startIndex, offsetBy: bounds.upperBound)
+    return self[startIndex ... end]
+  }
+  public subscript(bounds: PartialRangeUpTo<Int>) -> Substring {
+    let end = index(startIndex, offsetBy: bounds.upperBound)
+    return self[startIndex ..< end]
+  }
+}
+И в качестве упражнения скопируйте весь этот текст еще раз для типа Substring. Язык не для краткости, это уже понятно.
+Зато теперь можно нормально работать со строками:
+var str = "Some long string"
+let char = str[4]
+var substr = str[3 …< 8]
+let endSubstr = str[4…]
+var startSubstr = str[...5]
+let subSubStr = str[...8][2..][1..<4]
+Tuple
+Неизменяемая последовательность значений, или tuple, в Swift устроена немного иначе, чем в Python'е. Здесь это скорее похоже на смесь tuple и namedtuple.
+let tuple = (100, "value", true)
+print(tuple.0) // 100
+print(tuple.1) // "value"
+print(tuple.2) // true
+var person = (name: "John", age: 24)
+print(person.name, person.age)
+// а еще можно так
+let tuple2 = (10, name: "john", age: 32, 115)
+print(tuple2.1)        // john
+print(tuple2.name) // john
+А вот распаковывать tuple в аргументы функции нельзя. Раньше было можно. Потом запретили. Возможно, в будущем обратно введут.
+Коллекции: массивы, множества и словари
+Массив (Array) похож на python'овский list тем, что его размер можно менять, однако все элементы массива должны иметь один тип данных. С Setами та же история: как и в python'овском множестве можно менять состав элементов, но не тип. В словаре придется определить два типа: для ключей и для элементов.
+let immutableArray = [5, 10, 15]
+var intArr = [10, 20, 30]
+var nonInitIntArr: [Int]
+var emptyArr: [Int] = []
+var otherEmptyArr = [Int]()
+var names: [String] = ["John", "Anna"]
+var noninitSet: Set<String>
+var emptySet: Set<Int> = []
+var otherEmptySet = Set<Int>()
+var emptyDict: Dictionary<Int, String> = []
+var strToArrDict: Dictionary<String, [Int]>
+var fullDict: Dictionary<String, Int> = ["john": 24, "anna": 22]
+let allKeys = fullDict.keys
+let allVals = fullDict.values
+Кстати, если попробуете проитерироваться по словарю самым ожидаемым способом:
+for k in fullDict.keys {
+    print(k, fullDict[k])
+}
+то неожиданно получите кучку предупреждений от компилятора, потому что тип значений в словаре fullDict на самом деле не Int, а Optional<Int> (то есть может быть nil или int). Про Optional поговорим отдельно, а итерироваться удобней tuple'ами:
+for (key, val) in fullDict {
+    print(key, val)
+}
+Циклы
+Стандартный обход коллекции:
+for item in collection {
+    // ...
+}
+Удобно работать и с диапазонами:
+for i in 0...10 {
+    // ...
+}
+Если индексы нужны выборочно, что конструкция резко удлиняется:
+for i in stride(from: 0, to: 10, by: 2) {
+    // ...
+}
+Еще есть
+while someBool {
+    // ...
+}
+repeat {
+    // ...
+} while otherBool
+Функции
+Все, как и ожидалось:
+func myFunc(arg1: Int, arg2: String) -> Int {
+    // do this
+    // do that
+    return someInt
+}
+Видимое отличие от Python можно заметить в том, что у аргумента может быть не только имя и тип, но и метка:
+func fn1(a: Int, b: Int){
+    // обычные аргументы без меток
+}
+// при вызове функции имена аргументов необходимо указывать 
+fn1(a: 1, b: 10)
+func fn2(from a: Int, to b: Int){
+    // ...
+}
+// теперь в качестве имени аргумента указывается метка
+fn2(from: 1, to: 10)
+fn2(a: 1, b: 10)  // а так уже нельзя 
+func fn3(_ a: Int, to b: Int){
+    // _ - не использовать имя при вызове
+}
+// первый аргумент указывается без имени
+fn3(1, to: 10)
+Есть лямбды, здесь они называются closure
+{ (arg1: Int, arg2: String) -> Bool in
+    // ...
+    return someBool
+})
+Естественно, closure можно передавать в функции. И вот тут открывается новая внезапность:
+someFunc() {
+    // do this
+    // do that
+    return someInt
+}
+Выглядит как определение функции, только без слова func. Но на самом деле это вызов функции someFunc, которой в качестве последнего аргумента передается closure, заданная в фигурных скобках. Кстати, если closure выступает единственным аргументом функции, то круглые скобки можно опустить.
+let descArray = array.sorted { $0 > $1 }
+let firstValue = array.sorted { $0 > $1 }.first
+Классы и структуры
+Для создания сложных типов данных предусмотрены классы и структуры:
+struct MyStructure {
+    public var attr1: Int
+    private var count = 0
+    init(arg1: Int) {
+        attr1 = arg1
+    }
+    public func method1(arg1: Int, arg2: String) -> Float {
+        // ...
+        return 0.0    // этот метод обязательно должен вернуть значение типа Float
+    }
+}
+class MyClass {
+    public var attr1: Int
+    private var count = 0
+    init(arg1: Int) {
+        attr1 = arg1
+    }
+    public func method1(arg1: Int, arg2: String) -> Float {
+        // …
+        return 0.0    // этот метод обязательно должен вернуть значение типа Float
+    }
+}
+С виду разницы никакой, но она все же есть:
+
+структуры по умолчанию являются неизменяемыми (immutable), поэтому методы, изменяющие значения атрибутов, следует предварять ключевым словом mutating;
+структуры всегда передаются по значению, а классы по ссылке;
+классы можно наследовать.
+
+Как вы уже знаете по строкам, у классов и структур есть удобный метод subscript (аналог python'овских __getitem__ и __setitem__), позволяющий индексировать данные, чтобы вместо:
+let item = someClass.getItem(itemIndex)
+let item = someClass.getSubsetOfItems(fromIndex: 0, toIndex: 10)
+
+писать более компактное:
+let item = someClass[itemIndex]
+let aFewItems = someClass[0...10]
+Реализуется он примерно так:
+class MyClass {
+    private var myData = [Int: Double]()
+    public subscript(i: Int) -> Double {
+        get {
+            return myData[i]!
+        }
+        set {
+            myData[i] = newValue
+        }
+    }
+}
+Вы, наверное, спросите: что за newValue такое? А это еще одна неявная конвенция — если для set'а не заданы аргументы, то значение передается через переменную newValue.
+
+Так, а что означает восклицательный знак после myData[i]?
+Optional
+В строго типизированном языке нужен особый способ работы с отсутствующими значениями. В Swift для этого есть Optional, который принимает значение определенного при декларации переменной типа или значение nil.
+var opt: Optional<Int>
+var short: Int?
+var anOpt: Optional<Int> = Int(32)
+var oneMore: Int? = nil
+Как с этим работать?
+if opt == nil {
+    print("Значения нет")
+} else {
+    print("Значение =", opt!)   // обратите внимание на восклицательный знак
+}
+Оператор ! предназначен для принудительной распаковки (англ. “force unwrapping”) значения. Если при этом opt был nil, вы получите runtime crash.
+Другая, более рекомендуемая конструкция, — блок if-let:
+if let val = short {
+    print("val - ‘настоящее’ значение short, чистый Int: ", val)
+} else {
+    print("short равен nil")
+}
+Для разворачивания опционала с присвоением ему значения по умолчанию существует оператор ??, который незамысловато называется nil-coalescing operator.
+print(oneMore ?? 0.0)    // если значения нет, то будет выведен 0.0
+Кроме того, Swift позволяет удобно получить значение атрибута, даже если он упакован в глубине сложной структуры:
+if let cityCode = person?.contacts?.phone?.cityCode {
+    // если человек определен, 
+    // и у него есть контактные данные, 
+    // в которых указан телефон, 
+    // в котором обозначен код города 
+} else {
+    // если хоть чего-нибудь нет
+    print("Код города неизвестен")
+}
+Python
+В Swift for Tensorflow заявлена работа с Python'ом, чтобы можно было писать Python-подобный код:
+import Python
+let np = Python.import("numpy")
+let a = np.arange(15).reshape(3, 5)
+let b = np.array([6, 7, 8])
+Но сейчас так не работает и можно писать только вот так:
+import Python
+let np = Python.import("numpy")
+let a = np.arange.call(with: 15).reshape.call(with: 3, 5)
+let b = np.array.call(with: [6, 7, 8])
+Когда будет сделано по-нормальному, пока не известно, потому что нужны изменения в языке, а предложение на изменение еще даже не подано, хотя активно обсуждается (уже в третий раз и пока безрезультатно).
+Кроме того, сейчас Swift умеет работать только с Python 2.7, установленным в /usr/local/lib/python27 (опять хардкод). Ни с какими виртуальными средами тоже не совместим. В виду имеющейся разницы между Python 2 и 3 с точки зрения С-структур данных и C-вызовов в ближайшее время эта проблема также не разрешится.
+Tensorflow
+Наконец-то добрались до главного, ради чего все и затевалось.
+Начнем с перемножения матриц:
+import TensorFlow
+var tensor = Tensor([[1.0, 2.0], [2.0, 1.0]])
+for _ in 0...100000 {
+    tensor = tensor * tensor - tensor
+}
+Выглядит точно красивее, короче и понятнее, чем на Python'е c tf.while_loop вкупе с созданием сессии и инициализацией переменных. Вот только пока медленнее, причем в разы. И GPU, конечно же, не поддерживается.
+Кстати, для матричного умножения надо использовать не * и не @, а замечательный знак 

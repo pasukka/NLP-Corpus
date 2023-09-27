@@ -1,0 +1,12 @@
+
+
+Algebra of text. Examples / Habr
+
+
+              14  April  2021 at 18:13  Algebra of text. Examples Search engines *Semantics *Algorithms *Natural Language Processing * 
+        Translation
+         
+                Original author:
+                
+                  —ергей ѕшеничников
+                  The previous work from ref [1] describes the method of transforming a sign sequence into algebra through an example of a linguistic text. Two other examples of algebraic structuring of texts of a different nature are given to illustrate the method.1. Morse-Weil-Gerke code as an algebra of matrix unitsThe symbol sequences (texts) of 26 Latin letters in the Morse code consist only of dots and dashes. This particular example was chosen because of its extremely concise dictionary (УdotФ and УdashФ).Dots or dashes here represent the words, and the texts made up of such words represent 26 letters of the alphabet. Each word has two coordinates. The first coordinate is the number of the word (dot or dash) in this letter (from one to four). The second coordinate is the number in the dictionary (1 or 2). Dictionary E1,1 ("dot") and E2,2 ("dash").Table 1: Morse code: Latin letters as sign sequences (texts)Each letter (sign sequence) with a number from the table 1 can be associated with a matrix polynomial P from 4

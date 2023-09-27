@@ -1,0 +1,45 @@
+
+
+Создание бесплатного ChatGPT телеграм бота на Python / Habr
+
+
+               Создание бесплатного ChatGPT телеграм бота на Python Level of difficulty  
+    Medium
+   Reading time  
+    3 min
+   Views  20K Instant Messaging *Python *API *GitHub *Artificial Intelligence   
+    From sandbox
+       ВведениеЭто моя первая статья но надеюсь вам понравится! Почему я решил создать эту статью, когда скорее всего есть уже много других подобных? Дело в том что официальное API компании OpenAI(компании которая создала ChatGPT) - платное(пробный период быстро заканчивается), но недавно я нашел метод, которым сам пользуюсь, через который можно создавать приложения с использованием ChatGPT - бесплатно, покажу на примере просто Telegram-чатботаПодготовкаИтак для начала нам нужно сделать несколько проверок на необходимые инструменты:Python - рекомендуемая версия 3.10 и вышеЧтобы проверить установлен ли Python в коммандной строке введите:python -VЕсли коммандная строка вывела версию Python - все в порядке, можем продолжать, в другом случаи установите Python с официального сайта и при установке обязательно убедитесь что поставлена галочка на "Add to PATH", продолжаемБиблиотека для взаимодействия с Telegram APIЧтобы ее установить необходимо использовать команду:pip install python-telegram-botБиблиотека взаимодействия с ChatGPTМы не будем использовать официальную библиотеку openai , вместо нее будет использована revChatGPT, ссылка на гитхаб автора - клик, чтобы ее установить необходимо использовать команду:pip install --upgrade revChatGPTТокен телеграм-ботаПолучить его можно создав новго или использовав уже существующего бота у BotFather https://t.me/BotFather Токен ЧатГПТЕсли вы зарегестрированы в Openai и можете взаимодействовать с ChatGPT на официальном сайте то чтобы его получить надо перейти по ссылке https://chat.openai.com/api/auth/session  и скопировать значение "accessToken"Использования бибилиотеки revChatGPTИтак для начала давайте разберемся как работает эта библиотека и затем интегрируем ее в бота, сделаем скрипт с постоянным циклом для некого подобия чата внутри консоли:from revChatGPT.V1 import Chatbot #импортируем библиотеку
+accesstoken="здесь вместо текста вставьте ваш accessToken" #задаем переменную токена
+chatbot = Chatbot(config={"access_token":accesstoken}) #инициализируем чатбота
+while True:
+  message = input("Вы:") #создаем ввод текста
+  output = chatbot.ask(message) #даем запрос ChatGPT с набранным текстом
+  print(f"ChatGPT:{output}") #выводим ответ ChatGPTВы можете попробовать использовать этот скрипт для проверки токена и других целей, в нашем случаи ознакомление с работой revChatGPTСоздание Telegram ботаТеперь приступим к созданию кода непосредственно самого бота1.Импорт библиотек telegram и ChatGPT:from telegram.ext import Updater, CommandHandler, MessageHandler, filters
+from revChatGPT.V1 import Chatbot2. Инициализируем бота и ChatGPT# здесь нужно вставить свои токены
+TOKENTG = "TELEGRAM_TOKEN"
+TOKENGPT = "CHATGPT_TOKEN"
+updater = Updater(TOKENTG)
+chatbot = Chatbot(config={"access_token":TOKENGPT})3. Создаем функцию ответа на сообщения пользователяdef chatgpt_reply(update, context):
+  context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+  text = update.message.text
+  reply = chatbot.ask(text)
+  update.message.reply_text(reply)4. Создаем обработчик сообщенийecho_handler = MessageHandler(Filters.text & (~Filters.command), chatgpt_reply)
+updater.dispatcher.add_handler(echo_handler)5. Запуск ботаupdater.start_polling()
+updater.idle()Готово! наш код готов к работе, теперь его надо запустить:python bot.py*вместо bot.py должен быть файл где вы сохранили кодЗаключениеУ этого способа есть несколько минусов, которые честно говоря немного огорчают:вместо полноценной настройки контекста итп для чатгпт как в полноценном официальном АПИ мы имеем лишь ответы обычного ChatGPTТокен ChatGPT не постоянен и меняется периодически(должно пройти больше месяца)Этот телеграм бот довольно прост, и , например, если ответ ChatGPT будет слишком большой он не сможет его отправить из за ограничений в количестве символовВ остальном прекрасная а главное бесплатная альтернатива!Для модерации: в данной статье нет контекста жалобы на компанию OpenAI и их услугиПолный код бота:from telegram.ext import Updater, CommandHandler, MessageHandler, filters
+from revChatGPT.V1 import Chatbot
+TOKENTG = "TELEGRAM_TOKEN"
+TOKENGPT = "CHATGPT_TOKEN"
+updater = Updater(TOKENTG)
+chatbot = Chatbot(config={"access_token":TOKENGPT})
+def chatgpt_reply(update, context):
+  context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+  text = update.message.text
+  reply = chatbot.ask(text)
+  update.message.reply_text(reply)
+echo_handler = MessageHandler(Filters.text & (~Filters.command), chatgpt_reply)
+updater.dispatcher.add_handler(echo_handler)
+updater.start_polling()
+updater.idle()      Tags: Telegram botChatGPTAPIPythonGithubreverse engineering  Hubs: Instant MessagingPythonAPIGitHubArtificial Intelligence          
+
+

@@ -1,0 +1,117 @@
+
+
+Voila: из ноутбука в веб-приложение / Habr
+
+
+               Voila: из ноутбука в веб-приложение  Reading time  
+    5 min
+   Views  7.1K Python *Data Mining *Big Data *Machine learning *Artificial Intelligence  
+    Tutorial
+        Исходники: https://github.com/voila-dashboards/voilaДокументация: https://voila.readthedocs.io/en/stable/Галерея: https://voila-gallery.org/Voilà это библиотека, которая позволяет превращать Jupyter Notebook’и в интерактивные веб-приложения и дашборды. В основном это требуется чтобы продемонстрировать вашу работу сторонним людям или предоставить им какой-либо сервис.Основной конкурент Voilà – Streamlit. Но у них разные подходы. В то время как для стримлита нужно писать отдельное приложение, “вуаля” (так читается Voilà) работает непосредственно с кодом ноутбука и “конвертирует” его в веб-приложение, используя при этом возможности заложенные в них. И хотя в среднем Streamlit выглядит красивее, сила Voilà в простоте и скорости “разработки” (хотя и Voilà можно кастомизировать почти к любому виду).В отличие от статичных HTML-страниц, экспортированных из ноутбуков, в Voilà каждый пользователь, получает выделенное ядро Jupyter, которое и позволяет использовать интерактивные элементы.Установка и запускДля установки выполните в консоли команду:pip install voilaЗапустить Voilà можно тремя способами:Как отдельное приложениеВыполните в консоли подобную команду:voila <path-to-notebook> <options>Откроется веб-страница с отрендеренным ноутбуком.Если просто выполнить в консоли команду voila, то отобразится список всех ноутов в текущей (для консоли) папке. Щелкните по какому-либо ноутбуку чтобы отрендерить его.К часть Jupyter-сервераЗапустите/откройте ваш юпитер сервер. Допишите к базовому URL "суффикс" /voila:<url-of-my-server>/voilaВам отобразится список всех ноутбуков - щелкните по одному из них, чтобы отрендерить.КнопкаСамый простой запустить Voilà – по кнопке из интерфейса ноутбука.З.Ы. Для диагностики ошибок Voilà можно запустить в режиме отладки:voila <filename>.ipynb --debugИспользованиеА теперь посмотрим как работать с Voilà. Тут все подходы можно разделить на три крупных блока…СтатикаТут все просто. Все статичные картинки и текст отображаются как есть, ничего изобретать не нужно. Например:Везде где текст и заголовки тип ячейки нужно перевести в тип Markdown> Ячейка_1
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_iris
+> Ячейка_2 (Markdown)
+Какой-то текст..
+> Ячейка_3 (Markdown)
+## Таблица
+> Ячейка_4
+df = load_iris(as_frame=True)['frame']
+df
+> Ячейка_5 (Markdown)
+## График
+> Ячейка_6
+plt.figure(figsize=(11,6));
+sns.scatterplot(
+    data=df,
+    x='petal width (cm)',
+    y='petal length (cm)',
+    hue='target',
+    palette='jet_r'
+);Интерактивные интерфейсыРяд библиотек и инструментов Python имеют встроенные интерактивные элементы, которые не нужно никак (по умолчанию) настраивать и которые работают как есть в интерфейсе Voilà. Например Plotly, Bokeh, Folium, KeplerGL и многие другие. Задействуем парочку их них...Интерактивный график на основе Plotly:import plotly.graph_objects as go
+import pandas as pd
+df = pd.read_csv('biocon.csv')
+fig1 = go.Figure(data=[go.Candlestick(
+    x=df['Date'],
+    open=df['Open'],
+    high=df['High'],
+    low=df['Low'],
+    close=df['Close'])])
+fig1.show()Интерактивная карта на основе Folium:import folium
+from branca.element import Figure
+fig = Figure(width=800, height=500)
+m = folium.Map(location=[55.5236, 52.6750],width=800,height=500)
+fig.add_child(m)ВиджетыЕсли же вы хотите какой-то кастомный функционал, то вам потребуется виджеты. В частности библиотека ipywidgets, которая входит в экосистему юпитера. В документации ipywidgets довольно подробно описаны все ее виджеты: https://ipywidgets.readthedocs.io/en/7.x/examples/Widget%20List.htmlСначала сделаем интерактивный EDA – будем выбирать поля для графика из ниспадающих списков:> Ячейка_1
+from ipywidgets import interact, FloatSlider
+from sklearn.ensemble import RandomForestClassifier
+import numpy as np
+import warnings
+warnings.filterwarnings('ignore')
+> Ячейка_2
+df = load_iris(as_frame=True)['frame']
+X = df.drop(columns='target')
+y = df['target']
+> Ячейка_3
+def get_graf(select_x, select_y):
+    df0 = go.Scatter(
+        x=df.query('target == 0')[select_x],
+        y=df.query('target == 0')[select_y],
+        mode='markers',
+        name='0')
+    df1= go.Scatter(
+        x=df.query('target == 1')[select_x],
+        y=df.query('target == 1')[select_y],
+        mode='markers',
+        name='1')
+    df3 = go.Scatter(
+        x=df.query('target == 2')[select_x],
+        y=df.query('target == 2')[select_y],
+        mode='markers',
+        name='2')
+    g = go.FigureWidget(
+        data=[df0, df1, df3],
+        layout=go.Layout(
+            title={
+                'text': 'Iris Measurements',
+                'y':0.85,
+                'x':0.5,
+                'xanchor': 'center',
+                'yanchor': 'top'},
+            xaxis_title=select_x,
+            yaxis_title=select_y,
+            legend_title = 'Iris Species'
+        ))
+    g.show()
+select_x = Dropdown(
+  options=list(X.columns), layout=Layout(width = '160px'))
+select_y = Dropdown(
+  options=list(X.columns[::-1]), layout=Layout(width = '160px'))
+ui = HBox([select_x, select_y])
+out = interactive_output(
+  get_graf, {'select_x': select_x, 'select_y': select_y})
+display(ui, out)Предположим, мы обучили модель и хотим показать как она делает предсказания:> Ячейка_2
+model = RandomForestClassifier()
+model.fit(X, y);
+> Ячейка_3
+def get_pred(sepal_length, sepal_width, petal_length, petal_width):
+    sample = [sepal_length,sepal_width,petal_length,petal_width]
+    pred_class = model.predict(np.array([sample]))[0]
+    
+    out = Output(layout={'border': '1px solid white'})
+    with out:
+        display(HTML(value=f'<b>Класс - {pred_class}</b>'))
+    return out  
+interact(
+    get_pred,
+    sepal_length = FloatSlider(
+        min = 4.0, max = 8.0, step = 0.1, description = 'Sepal length'),
+    sepal_width = FloatSlider(
+        min = 1.8, max = 4.6, step = 0.1, description = 'Sepal width'),
+    petal_length = FloatSlider(
+        min = 0.8, max = 7, step = 0.1, description = 'Petal length'),
+    petal_width = FloatSlider(
+        min = 0.0, max = 2.8, step = 0.1, description = 'Petal width')
+);КастомизацияБазовая визуализация Voilà выглядит довольно просто. Но Voilà поддерживает несколько методов кастомизации.Темы – позволяют вам вносить простые изменения в отображение, такие как изменение цвета, отступы и прочее. Запускать так:voila <filename>.ipynb --theme=darkШаблоны – посредством библиотеки nbconvert и шаблонов Jinja, ноутбуки можно конвертировать в сложные дашборады, с паралельным расположением ячеек и прочим наворотами. Указать шаблон при запуске можно так:voila <filename>.ipynb --template=gridstackБолее подробно о содании тем и шаблонов (а также про другие настройки) читайте в документации: https://voila.readthedocs.io/en/stable/customize.htmlОбратите внимание на функционал горячих ядер, который позволяет ускорить загрузку приложений.Публикация приложенийВ документации Voilà описано развертывание с помощью трех публичных сервисов: Binder, Heroku иr GCP App Engine. Помимо этого вы можете опубликовать Voilà на своем собственном сервер или с помощью утилиты ngrok.Более подробно читайте в: https://voila.readthedocs.io/en/stable/deploy.html#cloud-service-providersЧто дальше…Можете ознакомиться с галереей примеров, созданных с помощью виджетов Voilà и Jupyter: https://voila-gallery.org. Большинство примеров основаны на библиотеках ipywidgets, ipyleaflet, ipyvolume, bqplot and ipympl и демонстрируют, как создавать сложные веб-приложения, полностью основанные на блокнотах.На гите также есть папка с примерами (только не забудьте установить необходимые библиотеки из requirements): https://github.com/voila-dashboards/voila/tree/main/notebooks----------------Мой телеграм-канал      Tags: jupyterweb servicesdata sciencedata miningmachine-learning  Hubs: PythonData MiningBig DataMachine learningArtificial Intelligence          
+
+

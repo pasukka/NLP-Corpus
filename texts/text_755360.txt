@@ -1,0 +1,558 @@
+
+
+Простая нейронная сеть без библиотек и матриц. Эволюционный алгоритм / Habr
+
+
+               Простая нейронная сеть без библиотек и матриц. Эволюционный алгоритм Level of difficulty  
+    Medium
+   Reading time  
+    15 min
+   Views  7.8K Python *Machine learning *Artificial Intelligence  
+    Tutorial
+        Если еще не читали, прочитайте предыдущую статью.В прошлый раз мы создали простой класс нейронной сети, сегодня же сделаем на ее основе эволюционный алгоритм. Сначала придумаем задачу: Нейросеть должна движением платформы удержать мяч. Среда обученияМоя самая (не) любимая часть - физика. Создаем класс двухмерного вектора и функции для расчетов: нормали к данной прямой и проверка на пересечение двух прямых.Двухмерный вектор и расчетыimport random
+import time
+import tkinter as tk
+import math
+from copy import deepcopy as copy
+from neuro import NeuralNetwork
+import datetime
+import matplotlib.pyplot as plt
+class Vector:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+    def __add__(self, other): #сложение векторов
+        new = Vector(self.x + other.x, self.y + other.y)
+        return new
+    def __sub__(self, other): #вычитание векторов
+        new = Vector(self.x - other.x, self.y - other.y)
+        return new
+      
+    def __mul__(self, other): #умножение вектора на число
+        new = Vector(self.x * other, self.y * other)
+        return new
+    def length(self): #вычисление длины вектора
+        return (self.x**2 + self.y**2) ** 0.5
+def calculate_edge_normal(point1, point2):  # Функция для вычисления нормали к ребру
+    edge_vector = Vector(point2.x - point1.x, point2.y - point1.y)  # Вычисление вектора ребра
+    edge_length = edge_vector.length()  # Вычисление длины ребра
+    if edge_length == 0:
+        raise ValueError("The edge has zero length.")  # Исключение, если длина ребра равна нулю
+    normalized_edge_vector = Vector(edge_vector.x / edge_length,
+                                    edge_vector.y / edge_length)  # Нормализация вектора ребра
+    normal_vector = Vector(-normalized_edge_vector.y, normalized_edge_vector.x)  # Создание вектора нормали
+    return normal_vector  # Возврат вычисленной нормали к ребру
+def lines_intersect(line1, line2):  # Функция для определения пересечения двух отрезков
+    x1, y1, x2, y2 = line1[0].x, line1[0].y, line1[1].x, line1[1].y  # Извлечение координат точек первого отрезка
+    x3, y3, x4, y4 = line2[0].x, line2[0].y, line2[1].x, line2[1].y  # Извлечение координат точек второго отрезка
+    
+    # Вычисление наклонов (угловых коэффициентов) отрезков, обрабатывая случай вертикальных отрезков
+    slope1 = (y2 - y1) / (x2 - x1) if x2 - x1 != 0 else float('inf')
+    slope2 = (y4 - y3) / (x4 - x3) if x4 - x3 != 0 else float('inf')
+    
+    # Если наклоны отрезков равны, они параллельны и не пересекаются
+    if slope1 == slope2:
+        return False
+    
+    # Вычисление координат точки пересечения
+    if slope1 == float('inf'):  # Если первый отрезок вертикальный
+        x = x1
+        y = slope2 * (x - x3) + y3
+    elif slope2 == float('inf'):  # Если второй отрезок вертикальный
+        x = x3
+        y = slope1 * (x - x1) + y1
+    else:  # Если оба отрезка невертикальные
+        x = (slope1 * x1 - slope2 * x3 + y3 - y1) / (slope1 - slope2)
+        y = slope1 * (x - x1) + y1
+    
+    # Проверка, лежит ли точка пересечения внутри границ обоих отрезков
+    if ((x1 <= x <= x2 or x2 <= x <= x1) and
+        (x3 <= x <= x4 or x4 <= x <= x3)) and \
+            ((y1 <= y <= y2 or y2 <= y <= y1) and
+             (y3 <= y <= y4 or y4 <= y <= y3)):
+        return True  # Точка пересечения лежит на обоих отрезках
+    
+    return False  # Точка пересечения не лежит на одном из отрезков
+G = Vector(0, .1)G - гравитационная постоянная, каждый кадр мы будем прибавлять ее к вектору движения предметовИ классы для мяча и платформы:Классы мяча и платформыclass Ball:
+    def __init__(self, x, y, radius):
+        # Инициализация экземпляра класса Ball с заданными параметрами
+        self.pos = Vector(x, y)  # Позиция шара как вектор
+        self.radius = radius  # Радиус шара
+        self.movement = Vector(0, 1)  # Вектор скорости шара
+        self.collide = False  # Флаг пересечения с границей
+        self.weight = 1  # Масса шара
+    def next_frame(self, edges):
+        collide = False  # Инициализация флага пересечения
+        normals = []  # Список для хранения нормалей к граням
+        intersect = []  # Список для хранения флагов пересечения
+        for i, edge in enumerate(edges):
+            normal = calculate_edge_normal(edge[0], edge[1])  # Вычисление нормали к грани
+            normals.append(normal)
+            height = (self.pos, self.pos + (normal * self.radius))  # Вычисление высоты от центра шара к грани
+            intersect.append(lines_intersect(edge, height))  # Определение пересечения
+        # Обработка пересечений с гранями
+        # Если две пересечения, выбирается ближайшее по расстоянию
+        # Производится изменение скорости и позиции шара
+        # Если пересечения нет, движение шара продолжается без изменений
+        # Скорость шара увеличивается на вектор ускорения G (гравитации)
+        for i in range(4):
+            if intersect[i] and intersect[i + 1]:
+                if (intersect[i] - self.pos).length() <= (intersect[i + 1] - self.pos).length():
+                    self.movement = (normals[i] * self.movement.length()) * -1 * self.weight
+                    self.pos -= normals[i]
+                else:
+                    self.movement = (normals[i + 1] * self.movement.length()) * -1 * self.weight
+                    self.pos -= normals[i + 1]
+            elif intersect[i]:
+                self.movement = (normals[i] * self.movement.length()) * -1 * self.weight
+                self.pos -= normals[i]
+            elif intersect[i + 1]:
+                self.movement = (normals[i + 1] * self.movement.length()) * -1 * self.weight
+                self.pos -= normals[i + 1]
+        self.collide = any(intersect)  # Обновление флага пересечения
+        self.movement += G * self.weight  # Применение гравитации к скорости
+        self.pos += self.movement  # Применение скорости к позиции шара
+class Platform:
+    def __init__(self, x, y, height, width, rotate):
+        self.pos = Vector(x, y)
+        self.height = height
+        self.width = width
+        self.rotate = rotateВизуализация:Класс приложенияclass RotatingRectangleApp:
+    def __init__(self, root):
+        # Инициализация приложения
+        self.root = root
+        self.root.title("Rotate Rectangle")
+        self.canvas = tk.Canvas(root, width=1280, height=1280)
+        self.canvas.pack()
+        # Создание экземпляров платформы и двух шаров
+        self.rectangle = Platform(1280//2, 1280//2, 10, 800, 0)
+        self.ball = Ball(1280//2-100, 1280//2 - 500, 25)
+        self.ball1 = Ball(1280//2+100, 1280//2 - 300, 25)
+        
+        # Создание и отображение прямоугольника на холсте
+        self.drawing_rectangle = self.canvas.create_rectangle(self.rectangle.pos.x, self.rectangle.pos.y, self.rectangle.width, self.rectangle.height, outline='red', fill='red', width=2)
+        
+        # Привязка клавиш к методам
+        self.root.bind("<Right>", self.rotate_right)
+        self.root.bind("<Left>", self.rotate_left)
+        self.root.bind("<Up>", self.set_pause)
+    def rotate_right(self, event):
+        # Метод вращения прямоугольника вправо
+        self.rectangle.rotate = self.rectangle.rotate + 1  # Вращение на 1 градус
+    def set_pause(self, event):
+        # Метод для приостановки/возобновления движения шаров
+        global pause
+        pause = not pause
+    def rotate_left(self, event):
+        # Метод вращения прямоугольника влево
+        self.rectangle.rotate = self.rectangle.rotate - 1  # Вращение на 1 градус
+    def draw_rectangle(self):
+        # Метод для отображения вращающегося прямоугольника
+        
+        # Вычисление координат углов прямоугольника после вращения
+        center_x = self.rectangle.pos.x
+        center_y = self.rectangle.pos.y
+        angle_rad = math.radians(self.rectangle.rotate)
+        
+        corner_coords = [
+            self.rotate_point(self.rectangle.pos.x - self.rectangle.width/2, self.rectangle.pos.y - self.rectangle.height/2, center_x, center_y, angle_rad),
+            self.rotate_point(self.rectangle.pos.x + self.rectangle.width/2, self.rectangle.pos.y - self.rectangle.height/2, center_x, center_y, angle_rad),
+            self.rotate_point(self.rectangle.pos.x + self.rectangle.width/2, self.rectangle.pos.y + self.rectangle.height/2, center_x, center_y, angle_rad),
+            self.rotate_point(self.rectangle.pos.x - self.rectangle.width/2, self.rectangle.pos.y + self.rectangle.height/2, center_x, center_y, angle_rad)
+        ]
+        edges = [(Vector(corner_coords[i%4][0], corner_coords[i%4][1]), Vector(corner_coords[(i+1)%4][0], corner_coords[(i+1)%4][1])) for i in range(4)]
+        # Создание и отображение прямоугольника на холсте
+        self.drawing_rectangle = self.canvas.create_polygon(corner_coords, outline='red', fill='red', width=2)
+        return edges
+    def draw_ball(self):
+        # Метод для отображения шаров
+        coords = [
+            (self.ball.pos.x - self.ball.radius, self.ball.pos.y - self.ball.radius),
+            (self.ball.pos.x + self.ball.radius, self.ball.pos.y + self.ball.radius),
+        ]
+        self.canvas.create_oval(coords, outline='black', fill='', width=2)
+        coords = [
+            (self.ball1.pos.x - self.ball1.radius, self.ball1.pos.y - self.ball1.radius),
+            (self.ball1.pos.x + self.ball1.radius, self.ball1.pos.y + self.ball1.radius),
+        ]
+        self.canvas.create_oval(coords, outline='black', fill='', width=2)
+    def rotate_point(self, x, y, cx, cy, angle_rad):
+        # Метод для вращения точки вокруг центра
+        new_x = cx + (x - cx) * math.cos(angle_rad) - (y - cy) * math.sin(angle_rad)
+        new_y = cy + (x - cx) * math.sin(angle_rad) + (y - cy) * math.cos(angle_rad)
+        return new_x, new_y
+    def clear_canvas(self):
+        # Метод для очистки холста
+        self.canvas.delete("all")
+Процесс обученияУ нейросети следующая структура:7 входных нейронов, по 20 нейронов в двух скрытых слоях, 3 выходных и 1 нейрон смещения для каждого слоя, кроме выходного. Нейросети на вход дается: Поворот платформы, положение платформы, положение мяча и его вектор движения. Нейросеть должна вывести угол, на который повернется платформа и вектор на который она сдвинется.Необученная нейросетьДля начала создаем популяцию из 20ти случайных нейронных сетей и отправляем их в симуляцию.Выбираем 4ех самых успешных и каждому создаем 4 потомка с мутациями. Всего опять получается 20 особей(4 особи, 16 мутантов), которых мы опять закидываем в симуляцию.Код# Создание начальной популяции нейронных сетей
+generation = [NeuralNetwork([7, 20, 20, 3]) for i in range(20)]
+gen_count = 0
+graph = []  # Список для хранения результатов поколений
+# Бесконечный цикл эволюции и обучения
+while True:
+    gen_count += 1
+    generation_times = []  # Список для хранения времени выполнения для каждой сети в поколении
+    for i, nn in enumerate(generation):
+        root = tk.Tk()
+        app = RotatingRectangleApp(root)
+        # Запуск симуляции движения шара и вращения прямоугольника
+        start_time = datetime.datetime.now()
+        frames_count = -1
+        while 0 <= app.ball.pos.x <= 1280 and 0 <= app.ball.pos.y <= 1280:
+            frames_count += 1
+            edges = app.draw_rectangle()
+            app.ball.next_frame(edges)
+            input = [app.rectangle.rotate/360, app.rectangle.pos.x/1280, app.rectangle.pos.y/1280, app.ball.pos.x/1280, app.ball.pos.y/1280, app.ball.movement.x, app.ball.movement.y]
+            formatted_input = [math.tanh(el) for el in input]
+            # Прямой проход через нейронную сеть
+            out = nn.out(formatted_input)[-1]
+            # Обновление параметров вращения прямоугольника и движения шара на основе выхода сети
+            app.rectangle.rotate = (app.rectangle.rotate + out[0]) % 360
+            app.rectangle.pos += Vector(out[1], out[2])
+            app.draw_ball()
+            root.update()
+            if pause:
+                time.sleep(0.01)
+            app.clear_canvas()
+        
+        root.destroy()
+        all_time = frames_count
+        generation_times.append(all_time)
+    
+    # Эволюционный отбор: выбор наиболее успешных сетей
+    sorted_times = sorted(generation_times)[-4:]
+    lucky = [generation_times.index(el) for el in sorted_times]
+    if max(generation_times) >= 15000:
+        for el in lucky:
+            generation[el].save(f'dumps/{gen_count}-{el}-{generation_times[el]}.nn')
+    # Создание нового поколения на основе лучших сетей текущего поколения
+    new_generation = [copy(generation[lucky[0]]) for el in range(5)] + [copy(generation[lucky[1]]) for el in range(5)] + [copy(generation[lucky[2]]) for el in range(5)] + [copy(generation[lucky[3]]) for el in range(5)]
+    k_mut = 0.1
+    for i in range(len(new_generation)):
+        if i % 5 != 0:
+            new_generation[i].mutate(k_mut)
+    generation = new_generation
+    graph.append(max(generation_times))
+    
+    # Вывод информации о текущем поколении
+    print(gen_count, generation_times, lucky, max(generation_times))
+    print(generation[0].difference(generation[1]))
+    # Отображение графика с результатами
+    plt.close()
+    plt.plot(graph[-100:])
+    plt.show(block=False)
+    plt.pause(0.0000001)
+Функция мутацииДля класса нейронной сети из прошлой статьи добавим еще две функции: Мутация - случайное изменение весов. Просто перебор весов и добавление случайного значения в заданном диапазоне.    def mutate(self, mutate_k):
+        for layer in range(len(self.weights)):
+            for inp in range(len(self.weights[layer])):
+                for outp in range(len(self.weights[layer][inp])):
+                    self.weights[layer][inp][outp] += random.uniform(-mutate_k, mutate_k)Разница в весах. Это функция нужна для отладки и прослеживания разницы между поколениями.    def difference(self, other):
+        if self.neuron_size != other.neuron_size:
+            return None
+        difference_count = 0
+        for layer in range(len(self.weights)):
+            for inp in range(len(self.weights[layer])):
+                for outp in range(len(self.weights[layer][inp])):
+                    difference_count += abs(self.weights[layer][inp][outp] - other.weights[layer][inp][outp])
+        return difference_count
+Полный код нейросети (neuro.py)import math
+import random
+import time
+import datetime
+import json
+from copy import copy
+activation = math.tanh
+deactivation = math.tanh
+class NeuralNetwork:
+    def __init__(self, neurons_size: list, weights: list = None):
+        self.neuron_size = neurons_size
+        for i in range(len(neurons_size) - 1):
+            self.neuron_size[i] += 1
+        if weights is None:
+            self.weights = []
+            for i in range(len(neurons_size) - 1):
+                self.weights.append(
+                    [[random.uniform(-1, 1) for x in range(neurons_size[i + 1])] for y in range(neurons_size[i])])
+        else:
+            self.weights = weights
+    def out(self, inp):
+        out = [inp + [1]]
+        for i in range(1, len(self.weights) + 1):
+            a = []
+            for j in range(self.neuron_size[i]):
+                s = sum([out[i - 1][k] * self.weights[i - 1][k][j] for k in range(self.neuron_size[i - 1])])
+                a.append(activation(s))
+            if i != len(self.weights):
+                a += [1]
+            out.append(a)
+        return out
+    def correct(self, inp, answer, learning_rate=0.1):
+        out = self.out(inp)
+        errors = [[answer[i] - out[-1][i] for i in range(len(out[-1]))]]
+        for i in range(len(self.weights) - 1, 0, -1):
+            a = []
+            for j in range(self.neuron_size[i]):
+                s = sum([errors[0][k] * self.weights[i][j][k] for k in range(self.neuron_size[i + 1])])
+                a.append((1 - out[i][j] ** 2) * s)
+            errors.insert(0, a)
+        for i in range(len(self.weights)):
+            for j in range(self.neuron_size[i]):
+                for k in range(self.neuron_size[i + 1]):
+                    self.weights[i][j][k] += learning_rate * errors[i][k] * out[i][j]
+        error_count = sum([sum(abs(en) for en in el) for el in errors])
+        return out, error_count
+    def mutate(self, mutate_k):
+        for layer in range(len(self.weights)):
+            for inp in range(len(self.weights[layer])):
+                for outp in range(len(self.weights[layer][inp])):
+                    self.weights[layer][inp][outp] += random.uniform(-mutate_k, mutate_k)
+    def difference(self, other):
+        if self.neuron_size != other.neuron_size:
+            return None
+        difference_count = 0
+        for layer in range(len(self.weights)):
+            for inp in range(len(self.weights[layer])):
+                for outp in range(len(self.weights[layer][inp])):
+                    difference_count += abs(self.weights[layer][inp][outp] - other.weights[layer][inp][outp])
+        return difference_count
+    def save(self, name):
+        with open(name, 'w') as f:
+            neuron_size = copy(self.neuron_size)
+            for i in range(len(neuron_size) - 1):
+                neuron_size[i] -= 1
+            f.write(json.dumps({'shape': neuron_size, 'weights': self.weights}))
+    def open(name):
+        with open(name, 'r') as f:
+            data = json.loads(f.read())
+            return NeuralNetwork(data['shape'], data['weights'])
+    def show(self, name):
+        import matplotlib.pyplot as plt
+        import networkx as nx
+        from networkx.drawing.nx_agraph import graphviz_layout
+        G = nx.DiGraph()
+        for layer in range(len(self.neuron_size)):
+            for neuron in range(self.neuron_size[layer]):
+                G.add_node((layer, neuron))
+        for layer in range(len(self.neuron_size) - 1):
+            for from_neuron in range(self.neuron_size[layer]):
+                for to_neuron in range(self.neuron_size[layer + 1]):
+                    weight = self.weights[layer][from_neuron][to_neuron]
+                    G.add_edge((layer, from_neuron), (layer + 1, to_neuron), weight=weight)
+        pos = graphviz_layout(G, prog='dot', args="-Grankdir=LR")
+        edge_widths = [2 + abs(G.edges[edge]['weight']) for edge in G.edges]
+        edge_alpha = [abs(activation(G.edges[edge]['weight'])) / 2 for edge in G.edges]
+        edge_colors = ['green' if G.edges[edge]['weight'] >= 0 else 'red' for edge in G.edges]
+        nx.draw_networkx_nodes(G, pos, node_size=300, node_color='skyblue', alpha=0.8)
+        nx.draw_networkx_edges(G, pos, width=edge_widths, alpha=edge_alpha, edge_color=edge_colors, arrows=True)
+        layer_labels = {}
+        for layer in range(len(self.neuron_size)):
+            for neuron in range(self.neuron_size[layer]):
+                layer_labels[(layer, neuron)] = f"{neuron}"
+        nx.draw_networkx_labels(G, pos, labels=layer_labels, font_size=12, font_color='r')
+        plt.axis('off')
+        plt.title(f"Neural Network Weights")
+        plt.savefig(f'{name}.png')
+Полный код среды обучения (balance.py)import random
+import time
+import tkinter as tk
+import math
+from copy import deepcopy as copy
+from neuro import NeuralNetwork
+import datetime
+import matplotlib.pyplot as plt
+class Vector:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+    def __add__(self, other):
+        new = Vector(self.x + other.x, self.y + other.y)
+        return new
+    def __mul__(self, other):
+        new = Vector(self.x * other, self.y * other)
+        return new
+    def __sub__(self, other):
+        new = Vector(self.x - other.x, self.y - other.y)
+        return new
+    def length(self):
+        return (self.x**2 + self.y**2) ** 0.5
+def calculate_edge_normal(point1, point2):  # Функция для вычисления нормали к ребру
+    edge_vector = Vector(point2.x - point1.x, point2.y - point1.y)  # Вычисление вектора ребра
+    edge_length = edge_vector.length()  # Вычисление длины ребра
+    if edge_length == 0:
+        raise ValueError("The edge has zero length.")  # Исключение, если длина ребра равна нулю
+    normalized_edge_vector = Vector(edge_vector.x / edge_length,
+                                    edge_vector.y / edge_length)  # Нормализация вектора ребра
+    normal_vector = Vector(-normalized_edge_vector.y, normalized_edge_vector.x)  # Создание вектора нормали
+    return normal_vector  # Возврат вычисленной нормали к ребру
+def lines_intersect(line1, line2):
+    x1, y1, x2, y2 = line1[0].x, line1[0].y, line1[1].x, line1[1].y
+    x3, y3, x4, y4 = line2[0].x, line2[0].y, line2[1].x, line2[1].y
+    slope1 = (y2 - y1) / (x2 - x1) if x2 - x1 != 0 else float('inf')
+    slope2 = (y4 - y3) / (x4 - x3) if x4 - x3 != 0 else float('inf')
+    if slope1 == slope2:
+        return False
+    if slope1 == float('inf'):
+        x = x1
+        y = slope2 * (x - x3) + y3
+    elif slope2 == float('inf'):
+        x = x3
+        y = slope1 * (x - x1) + y1
+    else:
+        x = (slope1 * x1 - slope2 * x3 + y3 - y1) / (slope1 - slope2)
+        y = slope1 * (x - x1) + y1
+    if ((x1 <= x <= x2 or x2 <= x <= x1) and
+        (x3 <= x <= x4 or x4 <= x <= x3)) and \
+            ((y1 <= y <= y2 or y2 <= y <= y1) and
+             (y3 <= y <= y4 or y4 <= y <= y3)):
+        return True
+    return False
+G = Vector(0, .1)
+class Ball:
+    def __init__(self, x, y, radius):
+        self.pos = Vector(x, y)
+        self.radius = radius
+        self.movement = Vector(0, 1)
+        self.collide = False
+        self.weight = 1
+    def next_frame(self, edges):
+        collide = False
+        normals = []
+        intersect = []
+        for i, edge in enumerate(edges):
+            normal = calculate_edge_normal(edge[0], edge[1])
+            normals.append(normal)
+            height = (self.pos, self.pos + (normal * self.radius))
+            intersect.append(lines_intersect(edge, height))
+        if intersect[0] and intersect[1]:
+            if (intersect[0] - self.pos).length() <= (intersect[1] - self.pos).length():
+                self.movement = (normals[0] * self.movement.length()) * -1 * self.weight
+                self.pos -= normals[0]
+            else:
+                self.movement = (normals[1] * self.movement.length()) * -1 * self.weight
+                self.pos -= normals[1]
+        elif intersect[0]:
+            self.movement = (normals[0] * self.movement.length()) * -1 * self.weight
+            self.pos -= normals[0]
+        elif intersect[1]:
+            self.movement = (normals[1] * self.movement.length()) * -1 * self.weight
+            self.pos -= normals[1]
+        if intersect[2] and intersect[3]:
+            if (intersect[2] - self.pos).length() <= (intersect[3] - self.pos).length():
+                self.movement = (normals[2] * self.movement.length()) * -1 * self.weight
+                self.pos -= normals[2]
+            else:
+                self.movement = (normals[3] * self.movement.length()) * -1 * self.weight
+                self.pos -= normals[3]
+        elif intersect[2]:
+            self.movement = (normals[2] * self.movement.length()) * -1 * self.weight
+            self.pos -= normals[2]
+        elif intersect[3]:
+            self.movement = (normals[3] * self.movement.length()) * -1 * self.weight
+            self.pos -= normals[3]
+        self.collide = any(intersect)
+        self.movement += G*self.weight
+        self.pos += self.movement
+pause = False
+class Platform:
+    def __init__(self, x, y, height, width, rotate):
+        self.pos = Vector(x, y)
+        self.height = height
+        self.width = width
+        self.rotate = rotate
+class RotatingRectangleApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Rotate Rectangle")
+        self.canvas = tk.Canvas(root, width=1280, height=1280)
+        self.canvas.pack()
+        self.rectangle = Platform(1280//2, 1280//2, 10, 800, 0)
+        self.ball = Ball(1280//2-100, 1280//2 - 500, 25)
+        self.drawing_rectangle = self.canvas.create_rectangle(self.rectangle.pos.x, self.rectangle.pos.y, self.rectangle.width, self.rectangle.height, outline='red', fill='red', width=2)
+        self.root.bind("<Right>", self.rotate_right)  # Bind right arrow key
+        self.root.bind("<Left>", self.rotate_left)
+        self.root.bind("<Up>", self.set_pause)
+    def rotate_right(self, event):
+        self.rectangle.rotate = self.rectangle.rotate + 1  # Rotate by 15 degrees each time
+    def set_pause(self, event):
+        global pause
+        pause = not pause
+    def rotate_left(self, event):
+        self.rectangle.rotate = self.rectangle.rotate - 1  # Rotate by 15 degrees each time
+    def draw_rectangle(self):
+        center_x = self.rectangle.pos.x
+        center_y = self.rectangle.pos.y
+        angle_rad = math.radians(self.rectangle.rotate)
+        corner_coords = [
+            self.rotate_point(self.rectangle.pos.x - self.rectangle.width/2, self.rectangle.pos.y - self.rectangle.height/2, center_x, center_y, angle_rad),
+            self.rotate_point(self.rectangle.pos.x + self.rectangle.width/2, self.rectangle.pos.y - self.rectangle.height/2, center_x, center_y, angle_rad),
+            self.rotate_point(self.rectangle.pos.x + self.rectangle.width/2, self.rectangle.pos.y + self.rectangle.height/2, center_x, center_y, angle_rad),
+            self.rotate_point(self.rectangle.pos.x - self.rectangle.width/2, self.rectangle.pos.y + self.rectangle.height/2, center_x, center_y, angle_rad)
+        ]
+        edges = [(Vector(corner_coords[i%4][0], corner_coords[i%4][1]), Vector(corner_coords[(i+1)%4][0], corner_coords[(i+1)%4][1])) for i in range(4)]
+        self.drawing_rectangle = self.canvas.create_polygon(corner_coords, outline='red', fill='red', width=2)
+        return edges
+    def draw_ball(self):
+        coords = [
+            (self.ball.pos.x - self.ball.radius, self.ball.pos.y - self.ball.radius),
+            (self.ball.pos.x + self.ball.radius, self.ball.pos.y + self.ball.radius),
+        ]
+        self.canvas.create_oval(coords, outline='black', fill='', width=2)
+    def rotate_point(self, x, y, cx, cy, angle_rad):
+        new_x = cx + (x - cx) * math.cos(angle_rad) - (y - cy) * math.sin(angle_rad)
+        new_y = cy + (x - cx) * math.sin(angle_rad) + (y - cy) * math.cos(angle_rad)
+        return new_x, new_y
+    def clear_canvas(self):
+        self.canvas.delete("all")
+if __name__ == "__main__":
+    graph = []
+    generation = [NeuralNetwork([7, 20, 20, 3]) for i in range(20)]
+    gen_count = 0
+    while True:
+        gen_count += 1
+        generation_times = []
+        for i, nn in enumerate(generation):
+            root = tk.Tk()
+            app = RotatingRectangleApp(root)
+            start_time = datetime.datetime.now()
+            frames_count = -1
+            while 0 <= app.ball.pos.x <= 1280 and 0 <= app.ball.pos.y <= 1280:
+                frames_count += 1
+                #app.rectangle.rotate = math.cos(app.rectangle.rotate)*360
+                edges = app.draw_rectangle()
+                app.ball.next_frame(edges)
+                input = [app.rectangle.rotate/360, app.rectangle.pos.x/1280, app.rectangle.pos.y/1280, app.ball.pos.x/1280, app.ball.pos.y/1280, app.ball.movement.x, app.ball.movement.y]
+                formatted_input = [math.tanh(el) for el in input]
+                out = nn.out(formatted_input)[-1]
+                app.rectangle.rotate = (app.rectangle.rotate + out[0]) % 360
+                app.rectangle.pos += Vector(out[1], out[2])
+                #if gen_count % 100 == 0 or frames_count >= 20000:
+                app.draw_ball()
+                root.update()
+                if pause:
+                    time.sleep(0.01)
+                app.clear_canvas()
+            root.destroy()
+            all_time = frames_count
+            generation_times.append(all_time)
+        root.mainloop()
+        sorted_times = sorted(generation_times)[-4:]
+        lucky = [generation_times.index(el) for el in sorted_times]
+        if max(generation_times) >= 15000:
+            for el in lucky:
+                generation[el].save(f'dumps/{gen_count}-{el}-{generation_times[el]}.nn')
+        new_generation = [copy(generation[lucky[0]]) for el in range(5)] + [copy(generation[lucky[1]]) for el in range(5)] + [copy(generation[lucky[2]]) for el in range(5)] + [copy(generation[lucky[3]]) for el in range(5)]
+        k_mut = 0.1
+        for i in range(len(new_generation)):
+            if i % 5 != 0:
+                new_generation[i].mutate(k_mut)
+        generation = new_generation
+        graph.append(max(generation_times))
+        print(gen_count, generation_times, lucky, max(generation_times))
+        print(generation[0].difference(generation[1]))
+        plt.close()
+        plt.plot(graph[-100:])
+        plt.show(block=False)
+        plt.pause(0.0000001)
+ОбучениеЗапускаем процесс обучения - первые особи не понимают, что делать, случайно вращая и двигая платформу, хотя иногда у них и получаются интересные решения. Видели, как крутанул?О_оУже на 9ом поколении был преодолен рубеж в 20 тысяч кадров.Хоть нейросеть и проиграла спустя 20 тысяч кадров, но спустя еще пару поколений легко держалась бы бесконечно. Давайте усложним задачу - добавим второй мяч.На 15ом поколении особь продержалась 300000 кадров, после чего я ее остановил.Нейронка легко справилась и с этим. Я еще попробовал разные эксперименты, но она легко с ними справилась.Гитхаб-репозиторий: ссылкаЗаключениеНейронки это круто! Сохраняйте в закладки и поставьте апвоут, пожалуйста, это очень мотивирует. Также, если у вас есть какие-то идеи для нейросетей, пишите их в комментарии.КлиффхэнгерВ следующей части совместим эти два подхода. Ждите!      Tags: нейросетиразработкапрограммированиемашинное обучениеискусственный интеллект  Hubs: PythonMachine learningArtificial Intelligence          
+
+

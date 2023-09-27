@@ -1,0 +1,98 @@
+
+
+Дообучение EasyOCR / Habr
+
+
+               Дообучение EasyOCR  Reading time  
+    4 min
+   Views  11K Python *Data Mining *Machine learning *Artificial Intelligence  
+    Tutorial
+   
+    Technotext 2022
+       Привет, читатель!Перед тобой статья-путеводитель по дообучению EasyOCRНесмотря на то что EasyOCR очень хорошо себя показывает при распознание текста, её все таки необходимо дообучать для поднятия точности распознания (например № нет в символах распознания).1. Подготовка базы.Перед дообучением EasyOCR нам необходимо сгенерировать изображения с текстом и необходимым шрифтом или сделать разметку изображений.Для автоматической генерации рекомендую пользоваться библиотекой trdg, подробнее о том как ей пользоваться можно почитать тут.p.s. у нас была задача по распознанию паспорта, и шрифтов не смогли найти, поэтому нам пришлось в ручную составлять dataset.В итоге у нас должны получится изображения с текстом:и файл labels.csv следующего вида:где filename путь к файлу изображения, words расшифровка текста с изображения.Необходимо разделить выборку на 2 части (train и val) , это 2 каталога с изображениями и файлом *.csv2. Подготовка к обучению.   2.1. Для начала необходимо скачать репозиторий с git: https://github.com/JaidedAI/EasyOCR   2.2. Тут нам необходимо в каталог ./trainer/all_data добавить сформированный датасет.├── all_data
+│   ├── ru_train_filtered
+│   │   └── 10001_1.jpg
+│   │         ...
+│   │   └── labels.csv
+│   └── ru_val
+│   │   └── 10002_1.jpg
+│   │         ...
+│       └── labels.csv   2.3. Далее скачиваем уже обученную модель cyrillic_g2 и кладем ее в каталог с OCR (по умолчанию файл находится тут ~/.EasyOCR/model появляется после загрузки модели.   2.4. Теперь пришла очередь настраивать конфигурацию:для корректного обучения необходимо чтобы было 208 символов для распознания всего (если не хватает символов то надо их заменять);saved_model - путь к модели, которую надо дообучать, если обучение прервалось, то можно установить последнею сохраненную модель и продолжить обучение;experi ment_name - имя проекта;train_data, valid_data - путь к датасету;num_iter - кол-во эпох обучения;valInterval  - через сколько эпох выводить предсказание;FT - режим  файнтюннга;new_prediction - чтобы не начинать обучение с нуля ставим тут Falsenumber: '0123456789'
+symbol: "!\"#$%&'()*+,-./:;<=>?@[\\]№_`{|}~ €₽"
+lang_char: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюяЂђЃѓЄєІіЇїЈјЉљЊњЋћЌќЎўЏџҐґҒғҚқҮүҲҳҶҷӀӏӢӣӨөӮӯ'
+experi ment_name: 'ru_filtered'
+train_data: 'all_data'
+valid_data: 'all_data/val'
+manualSeed: 1111
+workers: 6
+batch_size: 64 #32 
+num_iter: 30000 
+valInterval: 200
+saved_model: 'cyrillic_g2'
+FT: True
+optim: False # значение по умолчанию - Adadelta
+lr: 1.
+beta1: 0.9
+rho: 0.95
+eps: 0.00000001
+grad_clip: 5
+#Data processing
+select_data: 'train' # это папка dataset в train_data
+batch_ratio: '1' 
+total_data_usage_ratio: 1.0
+batch_max_length: 68 
+imgH: 64
+imgW: 600
+rgb: False
+contrast_adjust: False
+sensitive: True
+PAD: True
+contrast_adjust: 0.0
+data_filtering_off: False
+# Архитектура модели
+Transformation: 'None'
+FeatureExtraction: 'VGG'
+SequenceModeling: 'BiLSTM'
+Prediction: 'CTC'
+num_fiducial: 20
+input_channel: 1
+output_channel: 256
+hidden_size: 256
+decode: 'greedy'
+new_prediction: False
+freeze_FeatureFxtraction: False
+freeze_SequenceModeling: False Сохраняем файл как custom_data_train.yaml в каталог config.Обучение EasyOCR!pip install utils
+import os
+import torch.backends.cudnn as cudnn
+import yaml
+from train import train
+from utils import AttrDict
+import pandas as pd
+cudnn.benchmark = True
+cudnn.deterministic = False
+def get_config(file_path):
+    with open(file_path, 'r', encoding="utf8") as stream:
+        opt = yaml.safe_load(stream)
+    opt = AttrDict(opt)
+    if opt.lang_char == 'None':
+        characters = ''
+        for data in opt['select_data'].split('-'):
+            csv_path = os.path.join(opt['train_data'], data, 'labels.csv')
+            df = pd.read_csv(csv_path, sep='^([^,]+),', engine='python', usecols=['filename', 'words'], keep_default_na=False)
+            all_char = ''.join(df['words'])
+            characters += ''.join(set(all_char))
+        characters = sorted(set(characters))
+        opt.character= ''.join(characters)
+    else:
+        opt.character = opt.number + opt.symbol + opt.lang_char
+    os.makedirs(f'./saved_models/{opt.experiment_name}', exist_ok=True)
+    return opt
+#Запускаем обучение
+opt = get_config("config/custom_data_train.yaml")
+train(opt, amp=False)
+  Запуск обученной EasyOCRНеобходимо скачать, извлечь и разместить файлы custom_example.py , custom_example.yaml в каталоге custom_EasyOCR (по умолчанию = ~/.EasyOCR/user_network) и поместите custom_example.pth (обученная модель) в каталог model (по умолчанию = ~/.EasyOCR/model) Как только вы разместите все 3 файла в соответствующих местах, вы можете использовать custom_example Обратите внимание что все 3 файла должны иметь одинаковое имя.reader = easyocr.Reader(['ru'],
+                        model_storage_directory='custom_EasyOCR/model',
+                        user_network_directory='custom_EasyOCR/user_network',
+                        recog_network='custom_example') Лайфхаки по улучшению точности распознанию.Перевести картинку в оттенки серого.Настроить словарь распознания символов result = reader.readtext(image, allowlist='АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ-')На распознание подавать картинку, где только 1 строка, а потом соединять строки.      Tags: easyocrocrpythonjобучение easyocr  Hubs: PythonData MiningMachine learningArtificial Intelligence          
+
+

@@ -1,0 +1,16 @@
+
+
+¬ебинар: Julia Ч A fresh approach to numerical computing and data science / Habr
+
+
+              13  March  2017 at 22:59  ¬ебинар: Julia Ч A fresh approach to numerical computing and data science FlyElephant corporate blog Data Mining *Big Data *Julia *Machine learning *      
+
+
+ оманда FlyElephant приглашает всех на вебинар "Julia Ч A fresh approach to numerical computing and data science", который проведет со-основатель и CEO в Julia Computing, а также со-автор €зыка Julia Ч Viral B. Shah.
+
+
+¬ебинар будет проходить 20 марта в 19:00 (EET) / 9:00 am (PST). язык Ч английский.
+
+¬се подробности и регистраци€ здесь    Tags: flyelephantвебинарJuliaData ScienceData MiningMachine Learningdeep learningbigdataHPCMPIGPUxeon phi Hubs: FlyElephant corporate blogData MiningBig DataJuliaMachine learning          
+
+

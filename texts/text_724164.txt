@@ -1,0 +1,10 @@
+
+
+GitHub представил Copilot X с чат-ботом и другими инструментами / Habr
+
+
+                GitHub представил Copilot X с чат-ботом и другими инструментами  Reading time  
+    1 min
+   Views  8.6K JUG Ru Group corporate blog Machine learning *Artificial Intelligence The future is here       GitHub объявил, что в дополнение к сервису Copilot создан ряд новых AI-сервисов под общим названием Copilot X:GitHub Copilot Chat — интерфейс для текстового общения с ИИ-помощником, который может быть встроен в редакторы вроде VS Code и Visual Studio (а судя по логотипу JetBrains в промо-ролике, и в их IDE тоже). Он понимает, какой код сейчас выделен и какие сообщения об ошибке получены. Поэтому можно попросить его «объясни это регулярное выражение», «сгенерируй юнит-тесты» и даже «помоги мне это отладить» (в официальном анонсе эти примеры даны на английском, о поддержке других языков там ничего не сообщается).Copilot Voice — интерфейс, позволяющий «наговаривать код голосом» («github, import pandas, import graph plotting library...»).Copilot for PRs — инструмент для автоматической генерации описаний к пулл-реквестам (с возможностью вручную отредактировать сгенерированное).Copilot for CLI — инструмент для управления командной строкой на естественном языке: если не помните точную команду, можно описать её словами. GitHub Copilot for Docs — инструмент для запросов к документации на естественном языке с помощью чат-интерфейса. Для получения доступа к инструментам можно записаться в пять разных списков ожидания:Copilot X Copilot Voice Copilot DocsCopilot for PRsCopilot CLI      Tags: github copilot  Hubs: JUG Ru Group corporate blogMachine learningArtificial IntelligenceThe future is here          
+
+

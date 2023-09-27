@@ -1,0 +1,246 @@
+
+
+Как сделать свой AnythingGPT, отвечающий на вопросы так, как вам это необходимо (Python, OpenAI Embeddings, ChatGPT API) / Habr
+
+
+               Как сделать свой AnythingGPT, отвечающий на вопросы так, как вам это необходимо (Python, OpenAI Embeddings, ChatGPT API) Level of difficulty  
+    Medium
+   Reading time  
+    17 min
+   Views  13K Python *Data Mining *Artificial Intelligence Data Engineering * 
+    Tutorial
+        AnythingGPT (если вы не разобрали кривой шрифт)Всем привет! Недавно я на практике применил одно интересное решение, которое давно хотел попробовать, и теперь готов рассказать, как своими руками такое можно сделать для любой другой аналогичной задачи. Речь пойдет о создании своей кастомизированной версии ChatGPT, которая отвечает на вопросы, учитывая большую базу знаний, которая по длине не ограничивается размером промта (то есть вы бы не смогли просто добавить всю информацию перед каждым вопросом к ChatGPT). Для этого будем использовать контекстные эмбеддинги от OpenAI (для действительно качественного поиска релеватных вопросов из базы знаний) и сам СhatGPT API (для оборачивания ответов в натуральный человеческие ответы). При этом, также предполагается, что ассистент может отвечать не только на прямо указанные в Q&A вопросы, но и на такие вопросы, на которые смог бы отвечать человек, который ознакомился с Q&A. Кому интересно научиться делать простых ботов, отвечающих по большой базе знаний, добро пожаловать под кат.Сразу скажу, что существуют некоторые проекты библиотек, которые пытаются решить эту задачу в виде фреймворка, например, LangChain, и я тоже пробовал ее использовать, но как и любой фреймворк, находящийся на достаточно ранней стадии развития, в некоторых случаях он скорее ограничивает, чем упрощает жизнь. В частности, с самого начала решения данной задачи я понимал, что именно хочу сделать с данными и понимал, как сделать это своими руками (в том числе контекстный поиск, задание правильного контекста в промте, комбинирование источников информации), но настроить фреймворк делать именно это у меня никак не получалось с приемлемым качеством, а отлаживать фреймворк уже казалось оверкилл для этой задачи. В общем я сделал свой бойлерплейт код и оказался доволен таким подходом. ЗадачаНемного опишу задачу, которую решал я, при этом вы можете использовать тот же самый код в своих задачах, заменив источники данных и промты на подходящие вам, при этом у вас останется полный контроль над логикой работы бота. При написании кода я часто использую ChatGPT (и не стыжусь этого), при этом из-за отсутствия данных за 2022+ год иногда возникают проблемы с относительно новыми технологиями. В частности, при разработке сабграфов стандарта The Graph (это наиболее популярный способ построения ETL для выгрузки индексированных данных смарт-контрактов из EVM-совместимых блокчейнов, почитать подробнее можно в моей предыдущей статье), сами библиотеки претерпели уже несколько ломающих совместимость изменений, что "старые" ответы от ChatGPT уже не помогают и надо идти искать правильные ответы в лучшем случае в скудной документации, а в худшем в дискорде разработчиков, что мягко говоря не очень удобно (это вам не stackoverflow). Вторая часть проблемы состоит в том, что каждый раз нужно задавать очень правильно контекст разговора, потому что ChatGPT все время уводит в сторону от тематики именно по сабграфам, то в GraphQL, то в SQL, то в высшую математику (The graph, subgraphs и тд супер не уникальные термины с кучей разных толкований и тематик). Поэтому недолго пострадав от общения с ChatGPT на тему исправления ошибок в коде сабграфов, я решил сделать своего SubgraphGPT бота, который будет всегда в правильном контексте и пытаться отвечать, учитывая базу знаний и сообщений разработчиков.PS. Я работаю продакт-менеджером в компании-провайдере Web3-инфраструктуры chainstack.com[ссылка удалена модератором] и отвечаю за развитие сервиса хостинга этих самых сабграфов, поэтому мне довольно много приходится с ними работать, помогая пользователям разобраться с этой относительно новой технологией.Верхнеуровневое решениеВ итоге для решения этой задачи, я решил использовать два источника:1) Вручную составленная база вопросов и ответов, отобранных в полуслепом режиме (часто я брал название темы из документации в качестве вопроса, а весь абзац наполнения в качестве ответа)2) Выгруженные сообщения из дискорда за последние 2 года (как раз чтобы покрыть недостающий период с конца 2021 года)Далее для каждого источника использовались разные подходы для составления запроса к ChatGPT API, в частности:Для вручную собранного Q&A,  для каждого вопроса генерируется контекстный эмбеддинг (вектор, описывающий этот вопрос в многомерном состоянии), получаемый через модель text-embedding-ada-002 , далее через функцию поиска косинусного расстояния находятся топ-3 наиболее похожих вопроса из базы знаний (вместо 3 может быть использовано наиболее подходящее для вашего датасета число),ответы на эти 3 вопроса добавляются в итоговый промт с примерным описанием "Используй этот фрагмент FAQ, только если он является релевантным заданному вопросу"Для выгруженных из дискорда сообщений использовался следующий алгоритм:для каждого сообщения, содержащего знак вопроса, также генерируется контекстный эмбеддинг (через ту же модель)далее, аналогичным образом выбираются топ-5 наиболее похожих вопросова в качестве контекста для ответа добавляются следующие за этим вопросом 20 сообщений, которые как предполагается с некоторой долей вероятности содержат ответ на вопроса к итоговому промту эта информация добавлялась примерно так: "Если ты не нашел в явном виде ответа на вопрос в приложенном фрагменте Q&A, то следующие фрагменты из чатов разработчиком могут быть тебе полезны для ответа на исходный вопрос ..."Кроме того, если не задать тему в явном виде, то наличие фрагментов Q&A и чатов может привести к двусмысленности в ответах, которые могут выглядеть, например, следующим образом:То есть, он понимает, что вопрос был отвязан от контекста, и принят был также отвязанным от контекста. Далее ему было сказано, что можно использовать такие данные, и он суммаризирует это:1) Вообще-то ответ может быть такой ...2) А если учесть контекст, то вот такой ...Чтобы избежать этого, мы вводим понятие topic, который задается явно и вставляется в начале промта в виде:"Мне нужно получить ответ на вопрос, связанный с темой "The Graph subgraph development": {{{what is a subgraph?}}}"Кроме того, в последнем предложении, я также добавляю это:Наконец, только если информации выше недостаточно, вы можете использовать свои знания в теме "The Graph subgraph development" для ответа на вопрос.В итоге, полный промт (за исключением части, полученной из чатов) выглядит следующий образом:I need to get an answer to the question related to the topic of "The Graph subgraph development": {{{what is a subgraph?}}}.Possibly, you might find an answer in these Q&As [use the information only if it is actually relevant and useful for the question answering]:Q: <What is a subgraph?> A: <A subgraph is a custom API built on blockchain data. Subgraphs are queried using the GraphQL query language and are deployed to a Graph Node using the Graph CLI. Once deployed and published to The Graph's decentralized network, Indexers process subgraphs and make them available to be queried by subgraph consumers.>Q: <Am I still able to create a subgraph if my smart contracts don't have events?> A: <It is highly recommended that you structure your smart contracts to have events associated with data you are interested in querying. Event handlers in the subgraph are triggered by contract events and are by far the fastest way to retrieve useful data. If the contracts you are working with do not contain events, your subgraph can use call and block handlers to trigger indexing. Although this is not recommended, as performance will be significantly slower.>Q: <How do I call a contract function or access a public state variable from my subgraph mappings?> A: <Take a look at Access to smart contract state inside the section AssemblyScript API. https://thegraph.com/docs/en/developing/assemblyscript-api/>Finally, only if the information above was not enough you can use your knowledge in the topic of "The Graph subgraph development" to answer the question.Ответ на запрос выше с таким полу-авто-сгенерированным промтом на входе уже выглядит правильно:В данном случае бот сразу отвечает в правильном ключе и добавляет еще релевантной информации, что ответ выглядит не так скудно, как в Q&A (напомню, что в точности этот вопрос встречается в списке вопросов-ответов), а с разумными пояснениями, отчасти снимающими следующие вопросы.Исходные кодыСразу скажу, что в конце будет ссылка на репозиторий, так что бота можно будет запустить как есть, подменив "topic" на свой, файл с базой знаний Q&A - на свои, и подложив свои API ключи для OpenAI и телеграм-бота. Так что в описании здесь, я не претендую на полное соответствие исходников гитхабу, скорее на освещение основных аспектов кода.1 - Подготовка виртуального окруженияСоздадим новое виртуальное окружение и установим зависимости из requirements.txt:virtualenv -p python3.8 .venv
+source .venv/bin/activate
+pip install -r requirements.txt2 - База знаний, собираемая вручнуюКак было описано выше, предполагается наличие списка вопросов-ответов, в данном случае в формате эксель-файла следующего вида:При этом, для поиска наиболее близкого вопроса к заданному, нам необходимо добавить к каждой строке этого файла эмбеддинг вопроса (многомерный вектор в пространстве состояний). Для этого воспользуемся файлом add_embeddings.py. Скрипт состоит из нескольких простых частей. Импорт библиотек и считывание аргументов командной строки:import pandas as pd
+import openai
+import argparse
+# Create an Argument Parser object
+parser = argparse.ArgumentParser(description='Adding embeddings for each line of csv file')
+# Add the arguments
+parser.add_argument('--openai_api_key', type=str, help='API KEY of OpenAI API to create contextual embeddings for each line')
+parser.add_argument('--file', type=str, help='A source CSV file with the text data')
+parser.add_argument('--colname', type=str, help='Column name with the texts')
+# Parse the command-line arguments
+args = parser.parse_args()
+# Access the argument values
+openai.api_key = args.openai_api_key
+file = args.file
+colname = args.colnameДалее считывание файла в pandas dataframe и фильтрация вопросов по наличию вопросительного знака. Этот фрагмент кода общий как для обработки базы знаний, так и сырого потока сообщений из дискорда, поэтому предполагая, что вопросы часто дублируются, я решил оставить такой простой способ грубой фильтрации не-вопросов. if file[-4:] == '.csv':
+    df = pd.read_csv(file)
+else:
+    df = pd.read_excel(file)
+# filter NAs
+df = df[~df[colname].isna()]
+# Keep only questions
+df = df[df[colname].str.contains('\?')]И последнее - функция для формирования эмбеддинга, путем вызова API модели text-embedding-ada-002, пару повторных запросов, тк API периодически перегружен и может ответить ошибкой, и применение этой фукнции к каждой строке датафрейма:def get_embedding(text, model="text-embedding-ada-002"):
+    i = 0
+    max_try = 3
+    # to avoid random OpenAI API fails:
+    while i < max_try:
+        try:
+            text = text.replace("\n", " ")
+            result = openai.Embedding.create(input=[text], model=model)['data'][0]['embedding']
+            return result
+        except:
+            i += 1
+def process_row(x):
+    return get_embedding(x, model='text-embedding-ada-002')
+df['ada_embedding'] = df[colname].apply(process_row)
+df.to_csv(file[:-4]+'_question_embed.csv', index=False)В итоге этот скрипт можно вызвать следующей командой:python add_embeddings.py \
+  --openai_api_key="xxx" \
+  --file="./subgraphs_faq.xlsx" \
+  --colname="Question"задав OpenAI API ключ, файл с базой знаний и имя колонки, в которой находится текст вопроса. Итоговый созданный файл subgraphs_faq._question_embed.csv содержит помимо колонок "Question" и "Answer" еще и колонку "ada_embedding".3 - Сбор данных из дискорда (опционально)Если вас интересует простой бот, отвечающий соотвественно вручную собранной базе знаний и только, можете пропустить этот и следующий разделы. Тем не менее, приведу кратко здесь примеры кода для сбора данных как из дискорд-канала, так и из телеграм-группы. Файл discord-channel-data-collection.py состоит из двух частей. Первая - импорт библиотек и инициализация аргументов из командной строки:import requests
+import json
+import pandas as pd
+import argparse
+# Create an Argument Parser object
+parser = argparse.ArgumentParser(description='Discord Channel Data Collection Script')
+# Add the arguments
+parser.add_argument('--channel_id', type=str, help='Channel ID from the URL of a channel in browser https://discord.com/channels/xxx/{CHANNEL_ID}')
+parser.add_argument('--authorization_key', type=str, help='Authorization Key. Being on the discord channel page, start typing anything, then open developer tools -> Network -> Find "typing" -> Headers -> Authorization.')
+# Parse the command-line arguments
+args = parser.parse_args()
+# Access the argument values
+channel_id = args.channel_id
+authorization_key = args.authorization_keyВторая - функция получения данных из канала и сохранения их в pandas датафрейм, а также ее вызов с заданными параметрами:def retrieve_messages(channel_id, authorization_key):
+    num = 0
+    limit = 100
+    headers = {
+        'authorization': authorization_key
+    }
+    last_message_id = None
+    # Create a pandas DataFrame
+    df = pd.DataFrame(columns=['id', 'dt', 'text', 'author_id', 'author_username', 'is_bot', 'is_reply', 'id_reply'])
+    while True:
+        query_parameters = f'limit={limit}'
+        if last_message_id is not None:
+            query_parameters += f'&before={last_message_id}'
+        r = requests.get(
+            f'https://discord.com/api/v9/channels/{channel_id}/messages?{query_parameters}', headers=headers
+        )
+        jsonn = json.loads(r.text)
+        if len(jsonn) == 0:
+            break
+        for value in jsonn:
+            is_reply = False
+            id_reply = '0'
+            if 'message_reference' in value and value['message_reference'] is not None:
+                if 'message_id' in value['message_reference'].keys():
+                    is_reply = True
+                    id_reply = value['message_reference']['message_id']
+            text = value['content']
+            if 'embeds' in value.keys():
+                if len(value['embeds'])>0:
+                    for x in value['embeds']:
+                        if 'description' in x.keys():
+                            if text != '':
+                                text += ' ' + x['description']
+                            else:
+                                text = x['description']
+            df_t = pd.DataFrame({
+                'id': value['id'],
+                'dt': value['timestamp'],
+                'text': text,
+                'author_id': value['author']['id'],
+                'author_username': value['author']['username'],
+                'is_bot': value['author']['bot'] if 'bot' in value['author'].keys() else False,
+                'is_reply': is_reply,
+                'id_reply': id_reply,
+            }, index=[0])
+            if len(df) == 0:
+                df = df_t.copy()
+            else:
+                df = pd.concat([df, df_t], ignore_index=True)
+            last_message_id = value['id']
+            num = num + 1
+        print('number of messages we collected is', num)
+        # Save DataFrame to a CSV file
+        df.to_csv(f'../discord_messages_{channel_id}.csv', index=False)
+if __name__ == '__main__':
+    retrieve_messages(channel_id, authorization_key)Из полезного тут есть деталь, которую каждый раз я днем с огнем не могу сыскать в интернете - это получения ключа авторизации. Если channel_id можно получить из URL ссылки на дискорд канал, открытой в браузере (последнее длинное число в ссылке), то authorization_key можно найти только начав писать какое-то сообщение в необходимом канале, после чего через инструменты разработчика найти событие с названием "typing" в секции Network и вытащить параметр из header'a.Получив эти параметры, сбор всех сообщений из канала можно запустить следующей командой (подставив свои значения):python discord-channel-data-collection.py \
+  --channel_id=123456 \
+  --authorization_key="123456qwerty"4 - Сбор данных из телеграмаТак как я часто выкачиваю разные данные из чатиков/каналов из телеграма, то решил также привести код и для этого, формирующий похожий по формату (совместимый в смысле работы скрипта add_embeddings.py csv файл). Итак скрипт telegram-group-data-collection.py выглядит следующим образом. Импорт библиотек и инициализация аргументов из командной строки:import pandas as pd
+import argparse
+from telethon import TelegramClient
+# Create an Argument Parser object
+parser = argparse.ArgumentParser(description='Telegram Group Data Collection Script')
+# Add the arguments
+parser.add_argument('--app_id', type=int, help='Telegram APP id from https://my.telegram.org/apps')
+parser.add_argument('--app_hash', type=str, help='Telegram APP hash from https://my.telegram.org/apps')
+parser.add_argument('--phone_number', type=str, help='Telegram user phone number with the leading "+"')
+parser.add_argument('--password', type=str, help='Telegram user password')
+parser.add_argument('--group_name', type=str, help='Telegram group public name without "@"')
+parser.add_argument('--limit_messages', type=int, help='Number of last messages to download')
+# Parse the command-line arguments
+args = parser.parse_args()
+# Access the argument values
+app_id = args.app_id
+app_hash = args.app_hash
+phone_number = args.phone_number
+password = args.password
+group_name = args.group_name
+limit_messages = args.limit_messagesКак вы можете заметить, нельзя просто скачать из все сообщения из чата, не авторизовавшись от себя как от первого лица. То есть вам придется помимо создания app через https://my.telegram.org/apps (получения APP_ID и APP_HASH), еще использовать номер и пароль, чтобы создать экземляр класса TelegramClient библиотеки Telethon. Помимо этого вам понадобится публичный group_name телеграм-чата и указание в явном виде количества последних выгружаемых сообщений. В целом, я много раз делал такую процедуру с любым количеством выгружаемых сообщений и ни разу не получал временных или постоянных банов от Telegram API, в отличие от случая, когда вы слишком часто отправляете сообщения с одного аккаунта. Вторая часть скрипта содержит саму функцию выгрузки сообщений и ее запуск (с необходимыми фильтрациями для избежания критических ошибок, останавливающих сбор на полпути):async def main():
+    messages = await client.get_messages(group_name, limit=limit_messages)
+    df = pd.DataFrame(columns=['date', 'user_id', 'raw_text', 'views', 'forwards', 'text', 'chan', 'id'])
+    for m in messages:
+        if m is not None:
+            if 'from_id' in m.__dict__.keys():
+                if m.from_id is not None:
+                    if 'user_id' in m.from_id.__dict__.keys():
+                        df = pd.concat([df, pd.DataFrame([{'date': m.date, 'user_id': m.from_id.user_id, 'raw_text': m.raw_text, 'views': m.views,
+                             'forwards': m.forwards, 'text': m.text, 'chan': group_name, 'id': m.id}])], ignore_index=True)
+    df = df[~df['user_id'].isna()]
+    df = df[~df['text'].isna()]
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date').reset_index(drop=True)
+    df.to_csv(f'../telegram_messages_{group_name}.csv', index=False)
+client = TelegramClient('session', app_id, app_hash)
+client.start(phone=phone_number, password=password)
+with client:
+    client.loop.run_until_complete(main())В итоге этот скрипт можно запустить следующей командой (замените значения на свои):python telegram-group-data-collection.py \
+  --app_id=123456 --app_hash="123456qwerty" \
+  --phone_number="+xxxxxx" --password="qwerty123" \
+  --group_name="xxx" --limit_messages=100005 - Скрипт телеграм-бота, который уже отвечает на вопросыЧаще всего я оборачиваю свои пет-проекты в телеграм ботов, так как это требует минимум усилий для запуска при этом сразу показывает потенциал. В данном случае я поступил также. Сразу скажу, что код бота не содержит всех корнер-кейсов, которые я использую в продакшен версии бота SubgraphGPT, т.к. в нем довольно много унаследованной логики из другого моего пет-проекта, напротив я оставил минимум основного кода, который должно быть легко модифицировать под свои нужды.Скрипт telegram-bot.py состоит из нескольких частей. Сначала как и прежде происходит импорт библиотек и инициализация аргументов из командной строки:import threading
+import telegram
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+import openai
+from openai.embeddings_utils import cosine_similarity
+import numpy as np
+import pandas as pd
+import argparse
+import functools
+# Create an Argument Parser object
+parser = argparse.ArgumentParser(description='Run the bot which uses prepared knowledge base enriched with contextual embeddings')
+# Add the arguments
+parser.add_argument('--openai_api_key', type=str, help='API KEY of OpenAI API to create contextual embeddings for each line')
+parser.add_argument('--telegram_bot_token', type=str, help='A telegram bot token obtained via @BotFather')
+parser.add_argument('--file', type=str, help='A source CSV file with the questions, answers and embeddings')
+parser.add_argument('--topic', type=str, help='Write the topic to add a default context for the bot')
+parser.add_argument('--start_message', type=str, help="The text that will be shown to the users after they click /start button/command", default="Hello, World!")
+parser.add_argument('--model', type=str, help='A model of ChatGPT which will be used', default='gpt-3.5-turbo-16k')
+parser.add_argument('--num_top_qa', type=str, help="The number of top similar questions' answers as a context", default=3)
+# Parse the command-line arguments
+args = parser.parse_args()
+# Access the argument values
+openai.api_key = args.openai_api_key
+token = args.telegram_bot_token
+file = args.file
+topic = args.topic
+model = args.model
+num_top_qa = args.num_top_qa
+start_message = args.start_messageОбратите внимание, что в данном случае также понадобится OpenAI API ключ, так как для того, чтобы найти наиболее похожий на только что введенный пользователей вопрос из базы знаний необходимо сначала получить эмбеддинг этого вопроса, вызвав API как мы это делали для самой базы знаний. Кроме того, нам понадобятся:токен телеграм-бота от BotFatherпуть к файлу с базой знаний (я намеренно пропускаю здесь случай с сообщениями из дискорда, тк полагаю, что это совсем нишевая задачка, но их легко подключить в коде, если необходимо)topic - это текстовая формулировка темы (упомянутая в начале статьи), в которой будет работать бот.start_message - сообщение, которое будет видеть пользователь, нажавший /start (по дефолту "Hello, World!"model -  выбор модели (задана по умолчанию)num_top_qa -  количество наиболее близких к заданному вопросов-ответов из базы знаний, которые будут использоваться в качестве контекста для запроса к ChatGPTДалее идет загрузка файла с базой знаний и инициализация эмбеддингов вопросов# reading QA file with embeddings
+df_qa = pd.read_csv(file)
+df_qa['ada_embedding'] = df_qa.ada_embedding.apply(eval).apply(np.array)Для запроса к ChatGPT API, также зная, что иногда он отвечает ошибкой, будучи перегруженным, я использую функцию с авто-повтором запроса при ошибке:def retry_on_error(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        max_retries = 3
+        for i in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                print(f"Error occurred, retrying ({i+1}/{max_retries} attempts)...")
+        # If all retries failed, raise the last exception
+        raise e
+    return wrapper
+@retry_on_error
+def call_chatgpt(*args, **kwargs):
+    return openai.ChatCompletion.create(*args, **kwargs)По рекомендации OpenAI перед пересчетом текста в эмбеддинг необходимо заменить новые строки на пробелы:def get_embedding(text, model="text-embedding-ada-002"):
+    text = text.replace("\n", " ")
+    return openai.Embedding.create(input=[text], model=model)['data'][0]['embedding']Для поиска наиболее близких вопросов считаем косинусное расстояние между двумя эмбеддингами вопросов, взятое прямо из библиотеки openai:def search_similar(df, question, n=3, pprint=True):
+    embedding = get_embedding(question, model='text-embedding-ada-002')
+    df['similarities'] = df.ada_embedding.apply(lambda x: cosine_similarity(x, embedding))
+    res = df.sort_values('similarities', ascending=False).head(n)
+    return resПолучив список наиболее близких к заданному пар вопрос-ответ, можно собрать их в один текст, разметив так, чтобы ChatGPT недвусмысленно определил, что есть что:def collect_text_qa(df):
+    text = ''
+    for i, row in df.iterrows():
+        text += f'Q: <'+row['Question'] + '>\nA: <'+ row['Answer'] +'>\n\n'
+    print('len qa', len(text.split(' ')))
+    return textПосле чего, уже нужно собрать описанные в самом начале статьи "куски" промта воедино:def collect_full_prompt(question, qa_prompt, chat_prompt=None):
+    prompt = f'I need to get an answer to the question related to the topic of "{topic}": ' + "{{{"+ question +"}}}. "
+    prompt += '\n\nPossibly, you might find an answer in these Q&As [use the information only if it is actually relevant and useful for the question answering]: \n\n' + qa_prompt
+    # edit if you need to use this also
+    if chat_prompt is not None:
+        prompt += "---------\nIf you didn't find a clear answer in the Q&As, possibly, these talks from chats might be helpful to answer properly [use the information only if it is actually relevant and useful for the question answering]: \n\n" + chat_prompt
+    prompt += f'\nFinally, only if the information above was not enough you can use your knowledge in the topic of "{topic}" to answer the question.'
+    return promptВ данном случае я исключил часть, использующую сообщения из дискорда, но логику можно проследить при условии chat_prompt != None. Помимо прочего нам понадобится функция, разбивающая полученный ответ от ChatGPT API на сообщения телеграма (не более 4096 символов):def telegram_message_format(text):
+    max_message_length = 4096
+    if len(text) > max_message_length:
+        parts = []
+        while len(text) > max_message_length:
+            parts.append(text[:max_message_length])
+            text = text[max_message_length:]
+        parts.append(text)
+        return parts
+    else:
+        return [text]Бот запускается вполне обычной последовательностью шагов, с заданием двух функций, срабатывающих по нажатию команды /start и по приему личного сообщения от пользователя:bot = telegram.Bot(token=token)
+updater = Updater(token=token, use_context=True)
+dispatcher = updater.dispatcher
+dispatcher.add_handler(CommandHandler("start", start, filters=Filters.chat_type.private))
+dispatcher.add_handler(MessageHandler(~Filters.command & Filters.text, message_handler))
+updater.start_polling()Код для ответа на /start очевиден:def start(update, context):
+    user = update.effective_user
+    context.bot.send_message(chat_id=user.id, text=start_message)А для ответа на сообщение в свободной форме, не совсем. Во-первых, чтобы избежать блокирования потоков от разных пользователей, сразу "разведем" их по независимым процессам через threading.def message_handler(update, context):
+    thread = threading.Thread(target=long_running_task, args=(update, context))
+    thread.start()Далее вся логика работы будет происходить внутри функции long_running_task. Я намеренно обернул основные фрагменты в try/except, чтобы при модифицировании кода бота было легко сразу локализовать ошибку. Сначала происходит получение сообщения и обработка ошибки, если пользователь отправил вместо сообщения файл или картинку. Далее поиск наиболее близких вопросов-ответов на заданный через search_similarПосле этого формирование текста со всеми вопросами-ответами через collect_text_qaИ формирование итогового промта для ChatGPT API через collect_full_promptdef long_running_task(update, context):
+    user = update.effective_user
+    context.bot.send_message(chat_id=user.id, text='

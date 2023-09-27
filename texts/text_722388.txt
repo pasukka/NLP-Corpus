@@ -1,0 +1,114 @@
+
+
+Бесплатный мультиязычный чат для сайта на Tawk + Notion + Telegram + chatGPT + GPT-Index / Habr
+
+
+               Бесплатный мультиязычный чат для сайта на Tawk + Notion + Telegram + chatGPT + GPT-Index  Reading time  
+    5 min
+   Views  11K Website development *Python *JavaScript *Artificial Intelligence Flask *      В нашем современном мире создание онлайн-платформы для общения между клиентами и представителями компании - это необходимое требование для многих бизнесов. Онлайн-чат для сайта является одним из наиболее эффективных и удобных способов связи с потенциальными клиентами и удержания уже имеющихся из-за своей быстрой и простой обработки сообщений.Я следил за различными видами использования chatGPT с момента его выхода. Описываемое далее решение я еще не встречал и поэтому думаю оно будет кому-то полезным.Формулировка задачиНеобходимо создать онлайн-чата для сайта со следующими возможностями:Общение с посетителями на любых языкахЗапрос варианта ответа на запрос посетителя у chatGPT, обученного на базе знаний компанииРеализовать все на бесплатных сервисахИтак, поехали!Шаг №1: Выбор сервиса для онлайн-чатаДля реализации задачи нам нужна возможность ставить свой обработчик на событие отправки сообщения посетителя. При этом сам сервис должен быть бесплатным.По итогу был выбрал сервис Tawk.to, у которого есть вот эти два обработчика:Шаг №2: Обучение chatGPTДля формирования базы знаний компании мы будем использовать библиотеку:🗂️ LlamaIndex 🦙 (GPT Index)https://github.com/jerryjliu/llama_indexВот пример использования библиотеки из официальной документации!pip install llama-index
+import os
+os.environ["OPENAI_API_KEY"] = 'YOUR_OPENAI_API_KEY'
+from llama_index import GPTSimpleVectorIndex, SimpleDirectoryReader
+documents = SimpleDirectoryReader('data').load_data()
+index = GPTSimpleVectorIndex(documents)
+# save to disk
+index.save_to_disk('index.json')
+# load from disk
+index = GPTSimpleVectorIndex.load_from_disk('index.json')
+index.query("<question_text>?") В качестве данных для формирование базы мы используем краткое описание компании и поместим его в текстовый файл:  # auras.txt
+AURA Services
+AURA Services, based in Tel Aviv, Israel, is a platform that mediates between local partner performers and clients and focused on short-term local services.
+AURA do marketing and local advertisement to promote local partner performers.
+The company acts as a broker and charges a commission from local partner performers for promotion of each service for clients.Шаг №3: Подготовка базы в NotionВсе поступающие сообщения от посетителей мы будем сохранять в Notion.Вот шаблон таблицы:https://candied-cactus-f66.notion.site/9cc1b8d874244cc0bef06d6de762d8df Процесс создания интеграции хорошо описан в этой статье:  https://notionso.ru/kb/sozdanie-integratsiy-s-pomoschyu-api-notion/ У нас будет вот такая функция для создание записей в таблице Notion:  def insertDatabase(databaseId, record, token):
+    headers = {
+        "Accept": "application/json",
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json",
+        "Notion-Version": "2021-05-13",
+    }
+    createUrl = "https://api.notion.com/v1/pages"
+    data = json.dumps(record)
+    res = requests.request("POST", createUrl, headers=headers, data=data)
+    return res Пример записи в таблицу:  record = {"parent": { "database_id": notion_DB_id },"properties": {}}
+record['properties']['URL'] = {"title": [{"text": {"content": "https://aura-s.com/"}}]}
+record['properties']['Message'] = {"rich_text": [{"text": {"content": "Hello World!"}}]}
+record['properties']['chatGPT_reply_English'] = {"rich_text": [{"text": {"content": "How i can help you?"}}]}
+insertDatabase(databaseId, record, token)Шаг №4: Создание Телеграм-ботаНайдите бота @BotFather  и отправьте ему команду /start или /newbot, чтобы создать нового бота. Затем следуйте инструкциям, вводя название и короткое имя для вашего бота. После этого вы получите ответ с токеном бота и ссылкой на документацию. Важно сохранить токен в надежном месте, так как он необходим для авторизации и установки связи между вами и вашим ботом.Шаг №5: Запуск HTTP API на FlaskДля обработки поступающих от посетителей сообщений нам необходимо написать небольшой Backend на Flask.У нас будет только одна точка входа в API, которая принимает входящее сообщение, затем отправляет запрос в chatGPT и просит его ответить на 3-х языках. Полученные ответы мы отправляем в телеграм бот и в таблицу Notion.Вот код нашего API:from flask import Flask, render_template, redirect, url_for, request, session, jsonify
+from flask_cors import CORS
+from os import path
+import json
+import os
+import requests
+import datetime
+import openai
+import telebot
+app = Flask(__name__)
+CORS(app)  # эта команда необходима для работы с API из React-приложений
+bot = telebot.TeleBot(config.tg_bot_key)
+    
+# /api/v1.0/new_online_chat_message
+@app.route('/api/v1.0/new_online_chat_message', methods=['GET'])
+def new_online_chat_message():
+    url = request.args.get("url", '-')
+    message = request.args.get("message", '-')
+    print('[START - new_online_chat_message]')
+    notion_DB_id = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+    record = {"parent": { "database_id": notion_DB_id },"properties": {}}
+    record['properties']['URL'] = {"title": [{"text": {"content": url}}]}
+    record['properties']['Message'] = {"rich_text": [{"text": {"content": message}}]}
+    
+    # Ask chatGPT
+    reply = ''
+    if message != '-':
+        index = GPTSimpleVectorIndex.load_from_disk('/wiki/index.json')
+				
+				# ID чата с телеграм ботом        
+				chat_id = 'XXXXXXXXX'
+        # English
+        response = index.query(message + '. Answer in English', response_mode="compact")
+        record['properties']['chatGPT_reply_English'] = {"rich_text": [{"text": {"content": response.response}}]}
+        reply = response.response
+        bot.send_message(chat_id, '🇬🇧\n' + reply)
+        
+        # Spanish
+        response = index.query(message + '. Answer in Spanish', response_mode="compact")
+        record['properties']['chatGPT_reply_Spanish'] = {"rich_text": [{"text": {"content": response.response}}]}
+        reply = response.response
+        bot.send_message(chat_id, '🇪🇸\n' + reply)
+        
+        # German
+        response = index.query(message + '. Answer in German', response_mode="compact")
+        record['properties']['chatGPT_reply_German'] = {"rich_text": [{"text": {"content": response.response}}]}
+        reply = response.response
+        bot.send_message(chat_id, '🇩🇪\n' + reply)
+    
+    res = notion_api.insertDatabase(notion_DB_id, record, config.notion_token)
+    print(res, res.text)
+    ###
+    return reply
+if __name__ == "__main__":
+    app.run(debug=True, host='0.0.0.0', port=5000)Шаг №6: Отправка сообщений из чата на сайте на HTTP APIИ финальная часть - мы добавляем обработчик в виджет чата Tawk.to:<!--Start of Tawk.to Script-->
+<script type="text/javascript">
+var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
+(function(){
+var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
+s1.async=true;
+s1.src='https://embed.tawk.to/640e244831ebfa0fe7f220c1/1grbjrffn';
+s1.charset='UTF-8';
+s1.setAttribute('crossorigin','*');
+s0.parentNode.insertBefore(s1,s0);
+})();
+  window.Tawk_API = window.Tawk_API || {};
+window.Tawk_API.onChatMessageVisitor = function(message){
+  var x = new XMLHttpRequest();
+x.open("GET", "https://АДРЕС_API/api/v1.0/new_online_chat_message?url=aura-s.com&message="+message, true);
+x.onload = function (){
+    alert( x.responseText);
+}
+x.send(null);
+  
+};
+</script>
+<!--End of Tawk.to Script-->Демонстрация работыИтогЯ надеюсь данное решение будет вам полезно и если вы используете его где-то, напишите пожалуйста про это в комментариях.И конечно я готов ответить на все ваши вопросы, пишите в мой ТГ.      Tags: chatgptgpt-3чатчат-ботtelegramnotionpythonflaskgpt-indextawk.to  Hubs: Website developmentPythonJavaScriptArtificial IntelligenceFlask          
+
+

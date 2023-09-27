@@ -1,0 +1,270 @@
+
+
+Как решить старую задачу с помощью ML на Python и .Net / Habr
+
+
+              24  June  2019 at 08:41  Как решить старую задачу с помощью ML на Python и .Net Python *.NET *Machine learning *Natural Language Processing * 
+        Tutorial
+           
+Бывает, что некоторые задачи преследуют тебя много лет. Для меня такой задачей стала склейка предложений текстов, в которых жестко забит переход на новую строку, а часто еще и перенос слов. На практике, это извлеченный из PDF или с помощью OCR текст. Часто можно было встретить такие тексты на сайтах он-лайн библиотек, в архивах старых документов, которые редактировались еще DOS-редакторами. И такое форматирование очень мешает затем правильной разбивке на предложения (а с переносами — и на токены) для последующей NLP-обработки. Да и банально показать такой документ в поисковой выдаче — будет некрасиво.
+Решал я эту задачу несколько раз — на Delphi, C#. Тогда это был жесткий алгоритм, где руками прописывал, например, какая может быть ширина текста, чтобы этот текст считался отформатированным "по-старому". Не всегда это срабатывало идеально, но в общем, хватало.
+В настоящий момент, переползаю в некоторых ML-проектах на Python. В один момент оказалось, что очередной корпус документов состоит из текстов, извлеченных из PDF-вариантов научных статей. Конечно же, текст был извлечен с жесткой разбивкой на строки символами конца абзаца, с переносами. Т.е., работать нормально с такими текстами дальше было невозможно. Питон привлекает тем, что в нем есть практически все! Но пара часов поисков не дала ничего вменяемого (возможно, конечно, это я так искал). И тогда я решил очередной раз написать постпроцессор для таких документов. Выбор был из двух вариантов — портировать свой прошлый код с C#, либо написать что-то, что можно было бы обучить. Окончательно на второй подход меня сподвигло то обстоятельство, что научные тексты частично были экспортированы из двухколоночных текстов, а частично из одноколоночных. Еще и разные размеры шрифтов. Это привело к тому, что старый вариант, с жестко зашитыми допустимыми границами, часто срабатывал неправильно. Сидеть вручную опять подбирать варианты — ну нет, скоро уже сингулярность наступит, у меня нет времени на это! Итак, решено — пишем библиотеку, использующую машинное обучение.
+Весь код можно найти в хранилище:
+
+Ноутбук с шагами
+Вспомогательные утилиты (заодно и шаблон для кодогенерации)
+Сгенерированный код
+Корпус размеченных (и не только) документов
+
+Разметка
+В чем кайф и сложность машинного обучения — если алгоритм где-то сбоит, часто не нужно менять саму программу. Достаточно набрать новые данные (часто их при этом нужно проаннотировать) и перезапустить построение модели. Все остальное компьютер сделает за вас. Конечно, есть шанс, что для новых данных придется придумывать новые фичи, менять архитектуру, но в большинстве случаев получается обойтись только проверкой, что все стало работать хорошо. Это же является и сложностью — набрать и разметить данные может быть сложно. Или очень сложно. А еще — страшно скучно :-)
+Итак, самое скучное — разметка. В папке corpus находятся документы, которые я просто взял из корпуса документов Krapivin2009, с которыми работал в тот момент. Там находятся 10 документов, которые показались мне типичными. Разметил я только 3, поскольку уже при запуске обучения на этой базе, было получено достаточное качество "склеивателя". Если в будущем окажется, что все не так просто, то в эту папку докинутся новые документы с разметкой и процесс обучения повторится.
+В данном случае мне показалось удобным, чтобы файлы остались текстовыми, поэтому формат разметки заключался в том, чтобы в начале строки добавить признак того, что эту строку нужно склеивать с предыдущей (символ '+') или нет (символ '*'). Вот фрагмент (файл 1005058.txt):
+*Introduction
+*Customers on the web are often overwhelmed with options and flooded with promotional messages for
++products or services they neither need nor want. When users cannot find what they are searching for, the
++e-commerce site struggles to maintain good customer relations.
+*Employing a recommender system as part of a site's Customer Relationship Management (CRM) activities
++can overcome the problems associated with providing users with too little information, or too much of
++the wrong information. Recommender systems are able to assist customers during catalog browsing and are
++an effective way to cross-sell and improve customer loyalty.
+*In this paper, we will compare several recommender systems being used as an essential component of
++CRM tools under development at Verizon. Our solutions are purposely for the current customers and current
++products - recommendations for new customers and new products are out of the scope of this paper. 
+Пара часов нудной работы и 3 файла с 2300 примерами (одна строка — один сэмпл) готовы. Этого уже достаточно во многих случаях для простых классификаторов типа логистической регрессии, которая и была применена далее.
+Фичи
+Классификаторы не работают напрямую с текстовыми данными. На вход им подаются фичи — либо числа, либо булевые признаки (которые опять-таки, переводятся в числа 0/1) того, что какая-то фича есть или нет. Конструирование правильных фич из хороших данных — залог успеха машинного обучения. Особенностью нашего случая является то, что наш корпус — это английские тексты. А хочется получить хотя бы минимальную языконезависимость. Хотя бы в пределах европейских языков. Поэтому для текстовых фич мы применим небольшую хитрость.
+Преобразование текста в список фич и меток, нужно ли склеивать с предыдущей строкой, осуществляется вспомогательной функцией _featurize_text_with_annotation:
+x, y = pdf_lines_gluer._featurize_text_with_annotation(raw_text)
+Примечание — здесь и далее идут в основном фрагменты кода на питоне, который полностью вы можете увидеть в ноутбуке.
+Использованные фичи:
+
+'this_len' — длина текущей строки в символах.
+'mean_len' — средняя длина строк в диапазоне -5...+5 строк.
+'prev_len' — длина предыдущей строки в символах.
+'first_chars' — вот здесь вот наша хитрая фича. Здесь помещены первые 2 символа строки. Но при этом, все строчные буквы (любого алфавита) заменены на английский символ 'a', заглавные — на 'A', цифры — на '0'. Это существенно уменьшает количество возможных признаков, при этом обобщая их. Примеры того, что получается: 'Aa', 'aa', 'AA', '0.', 'a-'… 
+'isalpha' — является ли буквой последний символ предыдущей строки.
+'isdigit' — является ли цифрой последний символ предыдущей строки.
+'islower' — является ли строчной буквой последний символ предыдущей строки.
+'punct' — знак пунктуации, на который заканчивается предыдущая строка, либо пробел для других сиволов.
+
+Пример набора фич для одной строки:
+{'this_len': 12, 'mean_len': 75.0, 'prev_len': 0, 'first_chars': 'Aa', 'isalpha': False, 'isdigit': False, 'islower': False, 'punct': ' '}
+Для того, чтобы с ними мог работать классификатор из пакета sklearn, используем класс DictVectorizer, с помощью которого строковые фичи (у нас это 'first_chars'), преобразуются в несколько столбцов, озаглавленных (имена можно получить через get_feature_names()) как 'first_chars=Aa', 'first_chars=0.'. Булевые фичи превращаются в нули и единицы, а числовые значения остаются числами — названия полей при этом не меняются. Наружу же метод возвращает numpy.array примерно такого вида (показана только одна строка):
+[[ 0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.
+   0.   0.   0.   0.   0.   0.   0.   0.   0.   0.   1.   0.   0.   0.
+  39.1 30.   0.   1.  36. ]]
+Тренировка классификатора
+Получив набор фичей в виде массива чисел с плавающей запятой, мы теперь можем запустить процесс обучения. Для этого используем в качестве классификатора логистическую регрессию. Классы несбалансированы, поэтому задаем опцию class_weight='balanced', проверяем результат на тестовой части корпуса:
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report
+clf = LogisticRegression(random_state=1974, solver='liblinear', max_iter=2000,
+                         class_weight='balanced')
+clf.fit(x_train, y_train)
+y_pred = clf.predict(x_test)
+print(classification_report(y_true=y_test, y_pred=y_pred))
+Получаем такие показатели качества:
+              precision    recall  f1-score   support
+       False       0.82      0.92      0.86       207
+        True       0.96      0.91      0.94       483
+    accuracy                           0.91       690
+   macro avg       0.89      0.91      0.90       690
+weighted avg       0.92      0.91      0.91       690
+Как видим, примерно в 1/10 случаев у нас происходят ошибки разного рода. Но на практике все не так страшно. Дело в том, что даже при разметке глазом не всегда понятно, где конец абзаца, а где просто конец предложения. Поэтому даже сама разметка может содержать такие ошибки. Но наиболее критичными являются ошибки не там, где они происходят на границе предложения, а там, где предложение остается разорванным. И таких ошибок в реальности очень немного.
+Восстанавливаем текст
+Настало время восстановить текст, испорченный извлечением из PDF. Определить, нужно ли склеивать строку с предыдущей, мы уже можем, но есть еще один момент — переносы. Тут все достаточно прямолинейно, поэтому эту часть я закодировал жестко (позволю себе псевдокод):
+Если нужно склеить с предыдущей строкой:
+    Если предыдущая строка заканчивается на один из символов переноса:
+        Удаляем из предыдущей строки последний символ
+    Иначе:
+        Добавляем к предыдущей строке пробел
+Иначе:
+    Добавляем к предыдущей строке символ конца абзаца \n
+Вооружившись такой стратегией, восстанавливаем английский текст (ошибки типа выпавших "ff" и "fi" есть и в оригинале — он просто скопирован из корпуса Krapivin2009):
+Оригинальный английский текстtext = """The rapid expansion of wireless services such as cellular voice, PCS
+(Personal Communications Services), mobile data and wireless LANs
+in recent years is an indication that signicant value is placed on accessibility
+and portability as key features of telecommunication (Salkintzis and Mathiopoulos (Guest Ed.), 2000).
+devices have maximum utility when they can be used any-
+where at anytime". One of the greatest limitations to that goal, how-
+ever, is nite power supplies. Since batteries provide limited power, a
+general constraint of wireless communication is the short continuous
+operation time of mobile terminals. Therefore, power management is
+y Corresponding Author: Dr. Krishna Sivalingam. Part of the research was
+supported by Air Force Oce of Scientic Research grants F-49620-97-1-
+0471 and F-49620-99-1-0125; by Telcordia Technologies and by Intel. Part of
+the work was done while the rst author was at Washington State Univer-
+sity. The authors' can be reached at cej@bbn.com, krishna@eecs.wsu.edu,
+pagrawal@research.telcordia.com, jcchen@research.telcordia.com
+c
+2001 Kluwer Academic Publishers. Printed in the Netherlands.
+Jones, Sivalingam, Agrawal and Chen
+one of the most challenging problems in wireless communication, and
+recent research has addressed this topic (Bambos, 1998). Examples include
+a collection of papers available in (Zorzi (Guest Ed.), 1998) and
+a recent conference tutorial (Srivastava, 2000), both devoted to energy
+ecient design of wireless networks.
+Studies show that the signicant consumers of power in a typical
+laptop are the microprocessor (CPU), liquid crystal display (LCD),
+hard disk, system memory (DRAM), keyboard/mouse, CDROM drive,
+oppy drive, I/O subsystem, and the wireless network interface card
+(Udani and Smith, 1996, Stemm and Katz, 1997). A typical example
+from a Toshiba 410 CDT mobile computer demonstrates that nearly
+36% of power consumed is by the display, 21% by the CPU/memory,
+18% by the wireless interface, and 18% by the hard drive. Consequently,
+energy conservation has been largely considered in the hardware design
+of the mobile terminal (Chandrakasan and Brodersen, 1995) and in
+components such as CPU, disks, displays, etc. Signicant additional
+power savings may result by incorporating low-power strategies into
+the design of network protocols used for data communication. This
+paper addresses the incorporation of energy conservation at all layers
+of the protocol stack for wireless networks.
+The remainder of this paper is organized as follows. Section 2 introduces
+the network architectures and wireless protocol stack considered
+in this paper. Low-power design within the physical layer is brie
+y
+discussed in Section 2.3. Sources of power consumption within mobile
+terminals and general guidelines for reducing the power consumed are
+presented in Section 3. Section 4 describes work dealing with energy
+ecient protocols within the MAC layer of wireless networks, and
+power conserving protocols within the LLC layer are addressed in Section
+5. Section 6 discusses power aware protocols within the network
+layer. Opportunities for saving battery power within the transport
+layer are discussed in Section 7. Section 8 presents techniques at the
+OS/middleware and application layers for energy ecient operation.
+Finally, Section 9 summarizes and concludes the paper.
+2. Background
+This section describes the wireless network architectures considered in
+this paper. Also, a discussion of the wireless protocol stack is included
+along with a brief description of each individual protocol layer. The
+physical layer is further discussed. """
+corrected = pdf_lines_gluer._preprocess_pdf(text, clf, v)
+print(corrected)
+После восстановления получаем:
+Восстановленный английский текстThe rapid expansion of wireless services such as cellular voice, PCS (Personal Communications Services), mobile data and wireless LANs in recent years is an indication that signicant value is placed on accessibility and portability as key features of telecommunication (Salkintzis and Mathiopoulos (Guest Ed.), 2000). devices have maximum utility when they can be used anywhere at anytime". One of the greatest limitations to that goal, however, is nite power supplies. Since batteries provide limited power, a general constraint of wireless communication is the short continuous operation time of mobile terminals. Therefore, power management is y Corresponding Author: Dr. Krishna Sivalingam. Part of the research was supported by Air Force Oce of Scientic Research grants F-49620-97-10471 and F-49620-99-1-0125; by Telcordia Technologies and by Intel. Part of the work was done while the rst author was at Washington State University. The authors' can be reached at cej@bbn.com, krishna@eecs.wsu.edu, pagrawal@research.telcordia.com, jcchen@research.telcordia.com c
+
+2001 Kluwer Academic Publishers. Printed in the Netherlands.
+
+Jones, Sivalingam, Agrawal and Chen one of the most challenging problems in wireless communication, and recent research has addressed this topic (Bambos, 1998). Examples include a collection of papers available in (Zorzi (Guest Ed.), 1998) and a recent conference tutorial (Srivastava, 2000), both devoted to energy ecient design of wireless networks.
+
+Studies show that the signicant consumers of power in a typical laptop are the microprocessor (CPU), liquid crystal display (LCD), hard disk, system memory (DRAM), keyboard/mouse, CDROM drive, oppy drive, I/O subsystem, and the wireless network interface card (Udani and Smith, 1996, Stemm and Katz, 1997). A typical example from a Toshiba 410 CDT mobile computer demonstrates that nearly 36% of power consumed is by the display, 21% by the CPU/memory,
+
+18% by the wireless interface, and 18% by the hard drive. Consequently, energy conservation has been largely considered in the hardware design of the mobile terminal (Chandrakasan and Brodersen, 1995) and in components such as CPU, disks, displays, etc. Signicant additional power savings may result by incorporating low-power strategies into the design of network protocols used for data communication. This paper addresses the incorporation of energy conservation at all layers of the protocol stack for wireless networks.
+
+The remainder of this paper is organized as follows. Section 2 introduces the network architectures and wireless protocol stack considered in this paper. Low-power design within the physical layer is brie y
+
+discussed in Section 2.3. Sources of power consumption within mobile terminals and general guidelines for reducing the power consumed are presented in Section 3. Section 4 describes work dealing with energy ecient protocols within the MAC layer of wireless networks, and power conserving protocols within the LLC layer are addressed in Section
+
+5. Section 6 discusses power aware protocols within the network layer. Opportunities for saving battery power within the transport layer are discussed in Section 7. Section 8 presents techniques at the OS/middleware and application layers for energy ecient operation.
+
+Finally, Section 9 summarizes and concludes the paper.
+
+2. Background
+
+This section describes the wireless network architectures considered in this paper. Also, a discussion of the wireless protocol stack is included along with a brief description of each individual protocol layer. The physical layer is further discussed.
+Есть одно спорное место, но в общем, предложения восстановлены и такой текст уже можно обрабатывать как цельные предложения.
+Но ведь мы задумывали сделать языконезависимый вариант. И именно на это нацелен наш набор фич. Давайте проверим на русском тексте (тоже фрагмент текста из PDF):
+Оригинальный русский текстru_text = """Метод опорных векторов предназначен для решения задач клас-
+сификации путем поиска хороших решающих границ (рис. 1.10), 
+разделяющих два набора точек, принадлежащих разным катего-
+риям. Решающей границей может быть линия или поверхность, 
+разделяющая выборку обучающих данных на пространства, при-
+надлежащие двум категориям. Для классификации новых точек 
+достаточно только проверить, по какую сторону от границы они 
+находятся.
+Поиск таких границ метод опорных векторов осуществляет в два 
+этапа:
+1. Данные отображаются в новое пространство более высокой 
+размерности, где граница может быть представлена как гипер-
+плоскость (если данные были двумерными, как на рис. 1.10, 
+гиперплоскость вырождается в линию).
+2. Хорошая решающая граница (разделяющая гиперплоскость) вычисляется
+путем максимизации расстояния от гиперплоскости до ближайших точек 
+каждого класса, этот этап называют максимизацией зазора. Это позволяет 
+обобщить классификацию новых образцов, не принадлежащих обучающему 
+набору данных."""
+corrected = pdf_lines_gluer._preprocess_pdf(ru_text, clf, v)
+print(corrected)
+Получили:
+Восстановленный русский текстМетод опорных векторов предназначен для решения задач классификации путем поиска хороших решающих границ (рис. 1.10), разделяющих два набора точек, принадлежащих разным категориям. Решающей границей может быть линия или поверхность, разделяющая выборку обучающих данных на пространства, принадлежащие двум категориям. Для классификации новых точек достаточно только проверить, по какую сторону от границы они находятся.
+
+Поиск таких границ метод опорных векторов осуществляет в два этапа:
+
+1. Данные отображаются в новое пространство более высокой размерности, где граница может быть представлена как гиперплоскость (если данные были двумерными, как на рис. 1.10, гиперплоскость вырождается в линию).
+
+2. Хорошая решающая граница (разделяющая гиперплоскость) вычисляется путем максимизации расстояния от гиперплоскости до ближайших точек каждого класса, этот этап называют максимизацией зазора. Это позволяет обобщить классификацию новых образцов, не принадлежащих обучающему набору данных.
+Тут вообще все идеально.
+Как пользоваться (кодогенерация)
+Вначале у меня был план сделать пакет, который можно поставить с помощью PIP, но потом придумал способ проще (для меня). Набор фич получился не очень большим, сама логистическая регрессия и DictVectorizer имеют несложную структуру:
+
+У DictVectorizer достаточно сохранять поля featurenames и vocabulary_
+У LogisticRegression — coef, classes, intercept_
+
+Поэтому родился другой вариант с кодогенерацией (в ноутбуке он идет в разделе "Serialize as code"): 
+
+Читаем файл pdf_lines_gluer.py, который содержит вспомогательный код для векторизации и восстановления текста с помощью обученного классификатора.
+В место, обозначенное в исходнике как "# inject code here #", вставляем код, инициализирующий DictVectorizer и LogisticRegression в том состоянии, которое получилось у нас в ноутбуке после обучения. Также инжектируем сюда единственную публичную (насколько это возможно для Питона) функцию preprocess_pdf:
+def preprocess_pdf(text: str) -> str:
+  return _preprocess_pdf(text, _clf, _v)
+Получившийся код записываем в файл pdf_preprocessor.py
+
+Именно этот, сгенерированный файл pdf_preprocessor.py и содержит все, что нам нужно. Чтобы его использовать — просто возьмите этот один файл и закиньте к себе в проект. Использование:
+from pdf_preprocessor import preprocess_pdf
+...
+print(preprocess_pdf(text))
+Если у вас появятся какие-то проблемы на каких-то текстах, то вот что нужно будет сделать:
+
+Закиньте ваши тексты в папку corpus, проаннотируйте их.
+Запустите ноутбук https://github.com/serge-sotnyk/pdf-lines-gluer/blob/master/pdf_gluer.ipynb — у меня на текущих текстах это занимает меньше 5 секунд.
+Забирайте и тестируйте новую версию файла pdf_preprocessor.py
+
+Возможно, что-то пойдет не так, и качество вас не удовлетворит. Тогда будет несколько сложнее — нужно будет добавлять новые фичи, пока не найдете их правильную комбинацию.
+C# и ML.NET
+В нашей компании, большая часть бэкэнд-кода базируется на .Net. Конечно, взаимодействие с Питоном добавляет здесь неудобств. И хотелось бы аналогичное решение иметь и на C#. Давненько следил за развитием фреймворка ML.NET. Делал небольшие попытки что-то делать в прошлом году, но они разочаровывали недостаточным покрытием разных кейсов, небольшим количеством документации, нестабильностью API. С весны нынешнего года, фреймворк перешел в состояние релиза и я решил попробовать его еще раз. Тем более, что самая нудная работа с разметкой корпуса уже была сделана.
+По первому впечатлению, фреймворк прибавил в удобстве. Чаще стал находить нужную документацию (хотя, до качества и количества в sklearn ей еще далеко). Но самое главное — год назад я еще практически не знал sklearn. А теперь начал видеть, что многие вещи в ML.NET пытались сделать по образу и подобию (насколько это возможно с учетом разницы платформ). Эти аналогии упростили усвоение принципов ML.NET на практике.
+Работающий проект на этой платформе можете посмотреть на https://github.com/serge-sotnyk/pdf-postprocess.cs
+Общие принципы остались теми же — в папке corpus расположены анотированные (и не очень) документы. Запустив проект ModelCreator, рядом с папкой corpus, увидим папку models, куда будет помещен архив с натренированной моделью. Это все та же логистическая регрессия с теми же фичами.
+Но тут уже не стал баловаться с кодогенерацией. Чтобы использовать натренированную модель, возьмите проект PdfPostprocessor (который внутри имеет вкомпилированную как ресурс модель PdfPostprocessModel.zip). После этого, модель можно использовать, как показано в минимальном примере — https://github.com/serge-sotnyk/pdf-postprocess.cs/blob/master/MinimalUsageExample/Program.cs:
+using PdfPostprocessor;
+...
+static void Main(string[] args)
+{
+    var postprocessor = new Postprocessor();
+    Console.WriteLine();
+    Console.WriteLine("Restored paragraphs in the English text:");
+    Console.WriteLine(postprocessor.RestoreText(EnText));
+    Console.WriteLine();
+    Console.WriteLine("Restored paragraphs in the Russian text:");
+    Console.WriteLine(postprocessor.RestoreText(RuText));
+}
+Пока копирование модели из папки models в проект PdfPostprocessor, осуществляется вручную — мне так было удобнее, чтобы лучше контролировать, какая из моделей попадет в окончательный проект.
+Есть nuget-package — PdfPostprocessor. Чтобы воспользоваться пакетом и моделью, натренированной вами, используйте перегруженный вариант конструктора Postprocessor.
+Сравнение вариантов на Python и C#
+Пока свежи ощущения от разработки на двух платформах, возможно имеет смысл коротко пересказать их. Я уже давно не являюсь воинствующим сторонником той или иной платформы и с пониманием отношусь к чувствам верующих разных конфессий. Также нужно понимать, что я все же большую часть жизни работаю с языками со статической типизацией, поэтому они мне просто немного ближе.
+Что не понравилось при переходе на C#
+
+Многословность. Все же код на Питоне компактнее. Это и отсутствие операторных скобок, и скобок после if, for. Отсутствие бесконечных new. Активное использование полей, поскольку их легко превратить в свойства при необходимости. Даже к тому, что приватность в Питоне, которая просто обозначается через подчеркивание в начале идентификатора — к этому привыкаешь и на практике оказалось очень даже удобно, удобнее чем куча модификаторов приватности в других языках. А краткость конструкций таки ускоряет разработку и облегчает чтение кода.
+В большинстве случаев код на Питоне выглядит чище и элегантнее (это просто субъективно). От этого его тоже легче читать и поддерживать.
+На Питоне почти для всего есть какая-то функция или декоратор в каком-то пакете, а вот на C# многое приходится дописывать. Это еще больше раздувает код разными вспомогательными функциями, классами. И еще больше отнимает времени.
+Степень документированности C# и его фреймворков существенно ниже, чем в экосистеме Питона.
+Более строгая типизированность ML.NET по сравнению со всеядным sklearn тоже заставила потратить некоторое время в поисках правильных преобразований, а предыдущий пункт не способствовал решению этого вопроса.
+
+Что понравилось при переходе на C#
+
+Ощущение надежности. Уже не очень часто, но достаточно регулярно, всеядность Питона приводит у меня к трудноуловимым проблемам. Вот и сейчас, при переносе кода на C#, нашлась ошибка, которая делала некоторые фичи бесполезными. После исправления, точность поднялась на пару процентов.
+Скорость. В коде на Питоне пришлось отказаться от фич, которые были завязаны на то, какое решение по склейке было принято в прошлых предложениях — если подавать классификатору предложения по-одному, то общая скорость получится ниже плинтуса. Чтобы обработка данных на Питоне была быстрой, необходимо максимально векторизовать её и иногда это заставляет отказываться от потенциально полезных вариантов, либо делать их очень сложно.
+Linq. Они намного удобнее, чем List Comprehension (LC) в Питоне. Даже LC с одним for заставляет меня написать вначале то, что после in, потом вернуться в начало и дописать for, и только потом уже написать выражение в начале LC. Просто именно в таком порядке я думаю — источник записей, айтемы, во что преобразовать. И LINQ (только не "человекопонятный" синтаксис) идеально ложится в такое направление. А уже двойной LC (с двумя for) высаживает меня надолго. Фактически, я начинаю мысленно писать два вложенных цикла, потом их объединяю.
+Lambda. Еще одна неудача Питона, на мой взгляд. Тут уже привык, но синтаксис C# все же элегантнее.
+
+Для себя сделал очевидный вывод — быстрые эксперименты лучше делать на Питоне. Если найденное решение использует базовые блоки, которые есть в .Net или их несложно написать самому, то можно портировать. Если же используется что-то специфическое — лучше сделать REST сервис и обертку к нему на C#.
+Современный C# развивается семимильными шагами. И огромное количество новых плюшек при сохранении обратной совместимости создает проблемы — язык становится очень сложным для новичков, но нельзя радикально что-то обрезать. Может быть Microsoft стоит пойти по пути Kotlin — создать на базе .Net новый язык с минималистичным современным синтаксисом, который можно будет в проектах совмещать со старым кодом. А еще хотелось бы иметь возможность напрямую взаимодействовать с Python-кодом — например, как это сделано в Julia. Такая возможность сняла бы множество вопросов.
+Заключение
+Целью данной статьи является:
+
+Просто документирование того, что сделал для себя — проектов столько, что если не описал, то через пол-года может быть сложно вспомнить. Но, надеюсь, что еще кому-то может быть полезно.
+Интересен фидбек по коду. Есть ощущение, что в ML.NET варианте можно было сделать что-то проще. Поэтому буду рад критике с дельными предложениями.
+Интересно, кто как встраивает Python-код в свои проекты на .Net. Опишите свои сценарии и ощущения от них в комментариях, пожалуйста.
+    Tags: beginnersmachine learningnlp (natural language processing)python.net coreml.netsklearnpdf/ocr postprocessing Hubs: Python.NETMachine learningNatural Language Processing          
+
+
