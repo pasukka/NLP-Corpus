@@ -1,8 +1,0 @@
-
-
-Бесплатные инструменты на основе OpenAI Codex / Habr
-
-
-              17  June   at 13:00  Бесплатные инструменты на основе OpenAI Codex Programming *Machine learning *Artificial Intelligence Natural Language Processing *      Думаю, многие знают изобретение Codex от OpenAI. Это мощная нейронная сеть, которая может делать любые операции с программным кодом. Она бесплатна, но доступна ограниченному кругу лиц.Мне удалось получить доступ к сие чуду. Я, как любитель всего открытого, решил косвенно дать людям доступ к Codex, поэтому разработал сервис - CodeTools. С помощью него можно перевести код с одного языка на другой, упростить код, задокументировать код, дополнить код и многое другое...Возможности"Мозгом" всего сервиса является нейронная сеть "code-davinci-002" - самая большая версия Codex. Использовать её в чистом виде можно в инструменте "Complete code": ваш текст передаётся без искажений.https://codetools.space/tools/complete/python/Stackoverflow с моментальным ответомhttps://codetools.space/tools/qa/Мой любимый инструмент: Вопрос-Ответ. Можно задать любой вопрос, а искусственный интеллект даст верный (может, не всегда) ответ.Автоматическое документирование кодаhttps://codetools.space/tools/docstring/python/Достаточно ввести код и машина сделает документацию ко всем его частям.Объяснение кодаhttps://codetools.space/tools/explain/python/Введите код и нейронная сеть объяснит, что он делает.ЗаключениеМне будет важно услышать ваше мнение о данном мини-проекте.CodeTools - https://codetools.space/     Tags: openaicodexgpt-3 Hubs: ProgrammingMachine learningArtificial IntelligenceNatural Language Processing          
-
-
