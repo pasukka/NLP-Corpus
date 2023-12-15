@@ -1,6 +1,6 @@
 # NLP-Datasets
 
-These resources includes articles related to the field of natural language processing (NLP).
+These resources includes articles  in Russian related to the field of natural language processing (NLP).
 
 NLP-Сorpus is sourced from open information available at [Habr](https://habr.com/ru/articles/). The articles in this corpus span from January 1, 2010, to September 20, 2023. 
 
