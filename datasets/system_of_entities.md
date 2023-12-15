@@ -23,7 +23,7 @@ List of attributes:
 * Value, 
 * Lang.
 
-We used the following template to indicate relations with ***data properties***: `Name_(Name-of-relation)_Name`. In places where *Name* is specified, the class and attribute names are inputted. For example, `Metric_hasValue_Value`.
+We used the following template to indicate relations with ***data properties***: `Name_NameOfRelation_Name`. In places where *Name* is specified, the class and attribute names are inputted. For example, `Metric_hasValue_Value`.
 
 List of data properties: 
 * Date_isDateOf_Application,
@@ -41,7 +41,7 @@ List of data properties:
 * Model_Language_Lang,
 * InfoResource_Language_Lang.
 
-We used the following template to indicate relations with ***object properties***: `Name_(Name-of-relation)_Name`. In places where *Name* is specified, names of the classes are inputted. For example, `Model_hasAuthor_Person`.
+We used the following template to indicate relations with ***object properties***: `Name_NameOfRelation_Name`. In places where *Name* is specified, names of the classes are inputted. For example, `Model_hasAuthor_Person`.
 
 List of object properties:
 * Object_includes_Object,
