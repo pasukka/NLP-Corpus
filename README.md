@@ -28,7 +28,7 @@ Example from the second dataset:
 об O
 NLP B-Science
 ( O
-Natural B-Sciencef
+Natural B-Science
 Language I-Science
 Processing I-Science
 ) O
